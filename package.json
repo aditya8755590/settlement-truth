@@ -12,6 +12,7 @@
     "start": "NODE_ENV=production node server/index.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "cors": "^2.8.5",
     "csv-parse": "^7.0.2",
     "express": "^4.21.2",

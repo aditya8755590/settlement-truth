@@ -490,7 +490,7 @@ class ReconciliationEngine {
       {
         timestamp: ts(2),
         title: `Pass 4 completed: Refund validation`,
-        description: `Duplicate refund detection ran against ${refunds.length} refund events. 0 legitimate multi-refunds blocked.`,
+        description: `Duplicate refund detection ran against ${d.refunds.length} refund events. 0 legitimate multi-refunds blocked.`,
       },
       {
         timestamp: ts(3),

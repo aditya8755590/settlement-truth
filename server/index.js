@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import multer from "multer";
 import { engine } from "./engine.js";
 import { parseCSV, buildDataset } from "./csvParser.js";
+import { explainRecord } from "./aiExplainer.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,10 +78,49 @@ app.get("/api/records/:id", (req, res) => {
   res.json(record);
 });
 
-// ─── Reconciliation ───────────────────────────────────────────────────────────
+// ─── Reconciliation ───────────────────────────────────────────────────────────────────
 app.post("/api/reconcile", (_req, res) => {
   const result = engine.runReconciliation();
   res.json(result);
+});
+
+// ─── Deterministic AI Explanation ──────────────────────────────────────────────────
+//
+// DESIGN: The engine finds the EXACT mismatch (no AI involved).
+// The AI only translates the pre-computed evidence JSON into plain English.
+// The AI cannot change the verdict, compute values, or add new information.
+//
+app.post("/api/explain/:id", async (req, res) => {
+  const record = engine.getRecordById(req.params.id);
+  if (!record) {
+    return res.status(404).json({ error: `Record ${req.params.id} not found. Run reconciliation first.` });
+  }
+
+  try {
+    const explanation = await explainRecord(record);
+    res.json({
+      orderId:    record.id,
+      status:     record.status,
+      ...explanation,
+    });
+  } catch (err) {
+    console.error("[/api/explain] Error:", err.message);
+    res.status(500).json({ error: "AI explainer failed. See server logs." });
+  }
+});
+
+// GET /api/explain/config — tells the client which AI source is active
+app.get("/api/explain/config", (_req, res) => {
+  res.json({
+    aiEnabled: !!process.env.GEMINI_API_KEY,
+    model: process.env.GEMINI_API_KEY ? "gemini-2.0-flash" : "deterministic",
+    guardrails: [
+      "AI receives only pre-computed JSON facts",
+      "AI cannot do financial math",
+      "AI cannot guess missing values",
+      "Fallback to deterministic template if AI unavailable",
+    ],
+  });
 });
 
 // ─── Audit ────────────────────────────────────────────────────────────────────
@@ -101,7 +141,7 @@ app.get("/api/metrics/groundtruth", (_req, res) => {
 
 // ─── Dataset Upload ───────────────────────────────────────────────────────────
 
-// POST /api/upload — accept up to 5 CSV files, parse & load into engine
+// POST /api/upload — accept up to 15 CSV files, parse & load into engine
 app.post("/api/upload", uploadMiddleware, async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: "No CSV files provided." });
@@ -113,6 +153,22 @@ app.post("/api/upload", uploadMiddleware, async (req, res) => {
 
   for (const file of req.files) {
     const result = parseCSV(file.buffer, file.originalname);
+
+    // Silently skip irrelevant tables (geolocation, products, sellers, etc.)
+    if (result.type === "skipped") {
+      parseResults.push({
+        filename: file.originalname,
+        detectedType: "skipped",
+        rowCount: result.rowCount,
+        validRowCount: 0,
+        errors: [],
+        preview: [],
+        detectedColumns: result.detectedColumns,
+        skipped: true,
+      });
+      continue;
+    }
+
     parseResults.push({
       filename: file.originalname,
       detectedType: result.type,
@@ -136,17 +192,17 @@ app.post("/api/upload", uploadMiddleware, async (req, res) => {
     }
 
     if (result.errors.length > 0) {
-      allErrors.push(...result.errors.map((e) => `[${file.originalname}] ${e}`));
+      allErrors.push(...result.errors.slice(0, 5).map((e) => `[${file.originalname}] ${e}`));
     }
   }
 
-  // Build the complete dataset (derives missing tables from what was uploaded)
+  // Build the complete dataset (derives missing tables, aggregates Olist tables)
   const dataset = buildDataset(parsed);
 
-  // Guard: need at least orders + payments to run
-  if (!dataset.orders.length || !dataset.payments.length) {
+  // Guard: need at minimum an orders table with at least some data
+  if (!dataset.orders.length) {
     return res.status(422).json({
-      error: "Upload must include at least an orders CSV and a payments CSV.",
+      error: "Upload must include an orders CSV (e.g. olist_orders_dataset.csv).",
       parseResults,
       errors: allErrors,
     });

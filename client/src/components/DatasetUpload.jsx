@@ -3,9 +3,12 @@ import React, { useState, useRef, useCallback } from "react";
 const TABLE_LABELS = {
   orders:      { icon: "📦", label: "Orders",       color: "#c9922d" },
   payments:    { icon: "💳", label: "Payments",     color: "#335a85" },
+  orderItems:  { icon: "🛒", label: "Order Items",  color: "#c9922d" },
   settlements: { icon: "🏦", label: "Settlements",  color: "#28745b" },
   bankCredits: { icon: "✅", label: "Bank Credits", color: "#6a4f9e" },
-  refunds:     { icon: "↩️", label: "Refunds",      color: "#b44b3f" },
+  refunds:     { icon: "↩️", label: "Refunds / Reviews", color: "#b44b3f" },
+  customers:   { icon: "👤", label: "Customers",    color: "#76736b" },
+  skipped:     { icon: "⏭",  label: "Skipped",      color: "#b8b3a9" },
   unknown:     { icon: "❓", label: "Unknown",      color: "#76736b" },
 };
 
