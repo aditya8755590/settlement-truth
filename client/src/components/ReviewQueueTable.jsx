@@ -31,14 +31,14 @@ export default function ReviewQueueTable({
             All
           </button>
           <button
-            className={`filter ${activeFilter === "matched" ? "active" : ""}`}
-            onClick={() => onFilterChange("matched")}
+            className={`filter ${activeFilter === "Cleared" ? "active" : ""}`}
+            onClick={() => onFilterChange("Cleared")}
           >
             Matched
           </button>
           <button
-            className={`filter ${activeFilter === "review" ? "active" : ""}`}
-            onClick={() => onFilterChange("review")}
+            className={`filter ${activeFilter === "Anomaly" ? "active" : ""}`}
+            onClick={() => onFilterChange("Anomaly")}
           >
             Review
           </button>
@@ -59,7 +59,7 @@ export default function ReviewQueueTable({
           <tbody id="recordsBody">
             {records.map((record) => {
               const isSelected = selectedRecord?.id === record.id;
-              const isMatch = record.status === "matched";
+              const isMatch = record.status === "Cleared";
 
               return (
                 <tr
@@ -74,10 +74,10 @@ export default function ReviewQueueTable({
                   <td>
                     <span
                       className={`decision-badge ${
-                        isMatch ? "matched" : "review"
+                        isMatch ? "Cleared" : "Anomaly"
                       }`}
                     >
-                      {isMatch ? "MATCHED" : "REVIEW"}
+                      {record.status}
                     </span>
                   </td>
                   <td className="evidence-score">{record.evidence}% evidence</td>

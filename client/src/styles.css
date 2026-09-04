@@ -497,14 +497,14 @@ tr.selected-row td {
   text-transform: uppercase;
 }
 
-.decision-badge.matched {
-  background: #e4f1eb;
-  color: var(--green);
+.decision-badge.Cleared {
+  background: rgba(14, 165, 233, 0.15); /* #0ea5e9 */
+  color: #0ea5e9;
 }
 
-.decision-badge.review {
-  background: #f7eae4;
-  color: var(--red);
+.decision-badge.Anomaly {
+  background: rgba(244, 63, 94, 0.15); /* #f43f5e */
+  color: #f43f5e;
 }
 
 .evidence-score {

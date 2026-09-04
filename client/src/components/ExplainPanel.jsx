@@ -86,7 +86,7 @@ export default function ExplainPanel({ record }) {
     );
   }
 
-  const isMatch = record.status === "matched";
+  const isMatch = record.status === "Cleared";
 
   const handleGenerateExplanation = async () => {
     if (aiState === "loading") return;

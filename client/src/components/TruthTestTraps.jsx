@@ -29,7 +29,7 @@ export default function TruthTestTraps() {
           </p>
           <div className="trap-result">
             <span>Unsafe shortcut</span>
-            <b>“Looks matched”</b>
+            <b>“Looks Cleared”</b>
           </div>
           <div className="trap-result safe-result">
             <span>Settlement Truth</span>

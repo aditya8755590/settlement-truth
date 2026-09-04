@@ -11,7 +11,7 @@ export default function MetricsGrid({ metrics, groundTruth, hasRun }) {
   return (
     <section className="metrics">
       <article>
-        <span>Auto-matched</span>
+        <span>Cleared</span>
         <strong id="matchedValue">
           {hasRun && metrics ? metrics.autoMatchedText : "—"}
         </strong>

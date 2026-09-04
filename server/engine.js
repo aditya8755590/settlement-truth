@@ -117,7 +117,7 @@ function reconcileOrder(order, idx) {
   if (orderPayments.length > 1) {
     return {
       orderId: order.orderId,
-      status: "review",
+      status: "Anomaly",
       exceptionType: "Duplicate payment capture",
       passes: { p1: false, p2: false, p3: false, p4: false },
       checks: [
@@ -134,7 +134,7 @@ function reconcileOrder(order, idx) {
   if (!payment) {
     return {
       orderId: order.orderId,
-      status: "review",
+      status: "Anomaly",
       exceptionType: "Missing payment capture",
       passes: { p1: false, p2: false, p3: false, p4: false },
       checks: ["Order exists in system", "❌ No gateway payment found for order"],
@@ -161,7 +161,7 @@ function reconcileOrder(order, idx) {
   if (!settlement) {
     return {
       orderId: order.orderId,
-      status: "review",
+      status: "Anomaly",
       exceptionType: "Missing settlement credit",
       passes: { p1: p1ok, p2: false, p3: false, p4: false },
       checks: [
@@ -208,7 +208,7 @@ function reconcileOrder(order, idx) {
   if (!bankCredit) {
     return {
       orderId: order.orderId,
-      status: "review",
+      status: "Anomaly",
       exceptionType: "Missing bank credit",
       passes: { p1: p1ok, p2: p2ok, p3: false, p4: false },
       checks: [
@@ -261,7 +261,7 @@ function reconcileOrder(order, idx) {
   if (!p4ok && refundException) {
     return {
       orderId: order.orderId,
-      status: "review",
+      status: "Anomaly",
       exceptionType: "Possible duplicate refund",
       passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: false },
       checks: [
@@ -284,7 +284,7 @@ function reconcileOrder(order, idx) {
 
     return {
       orderId: order.orderId,
-      status: "review",
+      status: "Anomaly",
       exceptionType: primaryException,
       passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: p4ok },
       checks,
@@ -297,7 +297,7 @@ function reconcileOrder(order, idx) {
   const isFeeAdjusted = feeVariance > 0;
   return {
     orderId: order.orderId,
-    status: "matched",
+    status: "Cleared",
     exceptionType: null,
     passes: { p1: true, p2: true, p3: true, p4: true },
     checks,
@@ -338,7 +338,7 @@ const KNOWN_EXCEPTIONS = new Set([
 ]);
 
 function groundTruth(orderId) {
-  return KNOWN_EXCEPTIONS.has(orderId) ? "review" : "matched";
+  return KNOWN_EXCEPTIONS.has(orderId) ? "Anomaly" : "Cleared";
 }
 
 // ─── Main engine class ────────────────────────────────────────────────────────
@@ -431,7 +431,7 @@ class ReconciliationEngine {
       const r = results[i];
       const payments = idx.paymentsByOrder.get(order.orderId) || [];
       const payment = payments[0];
-      const isMatch = r.status === "matched";
+      const isMatch = r.status === "Cleared";
 
       // Derive type label
       let type = "Order + gateway + settlement";
@@ -476,9 +476,9 @@ class ReconciliationEngine {
       const predicted = r.status;
       const expected  = groundTruth(r.orderId);
 
-      if (predicted === "review" && expected === "review") tp++;
-      else if (predicted === "review" && expected === "matched") fp++;
-      else if (predicted === "matched" && expected === "review") fn++;
+      if (predicted === "Anomaly" && expected === "Anomaly") tp++;
+      else if (predicted === "Anomaly" && expected === "Cleared") fp++;
+      else if (predicted === "Cleared" && expected === "Anomaly") fn++;
       else tn++;
     }
 
@@ -487,8 +487,8 @@ class ReconciliationEngine {
     const f1 = precision + recall > 0
       ? (2 * precision * recall) / (precision + recall) : 0;
 
-    const matched = records.filter((r) => r.status === "matched");
-    const review  = records.filter((r) => r.status === "review");
+    const matched = records.filter((r) => r.status === "Cleared");
+    const review  = records.filter((r) => r.status === "Anomaly");
     const reconciledAmount = matched.reduce((s, r) => s + r.amount, 0);
     const cashAtRisk       = review.reduce((s, r) => s + r.amount, 0);
 
