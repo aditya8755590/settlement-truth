@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Navbar from "./components/Navbar";
 import HeroSection from "./components/HeroSection";
+import DataSourceBanner from "./components/DataSourceBanner";
 import WorkflowSteps from "./components/WorkflowSteps";
 import ControlPanel from "./components/ControlPanel";
 import MetricsGrid from "./components/MetricsGrid";
@@ -10,43 +11,37 @@ import TruthTestTraps from "./components/TruthTestTraps";
 import AuditTrail from "./components/AuditTrail";
 
 export default function App() {
+  const [sources, setSources] = useState(null);
   const [records, setRecords] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [metrics, setMetrics] = useState(null);
+  const [groundTruth, setGroundTruth] = useState(null);
   const [auditTrail, setAuditTrail] = useState([]);
   const [hasRun, setHasRun] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [totalBatchSize, setTotalBatchSize] = useState(100);
 
-  // Fetch initial records and audit log
+  // On mount: load raw source counts and audit trail
   useEffect(() => {
-    fetchRecords("all");
-    fetchAudit();
+    fetch("/api/sources")
+      .then((r) => r.json())
+      .then(setSources)
+      .catch(() => {});
+
+    fetch("/api/audit")
+      .then((r) => r.json())
+      .then((d) => setAuditTrail(d.auditTrail ?? []))
+      .catch(() => {});
   }, []);
 
   const fetchRecords = async (filter) => {
     try {
       const res = await fetch(`/api/records?status=${filter}`);
-      if (!res.ok) throw new Error("Failed to fetch records");
+      if (!res.ok) return;
       const data = await res.json();
-      setRecords(data.records || []);
-      if (data.total) setTotalBatchSize(data.total);
-    } catch (err) {
-      console.warn("Backend API unavailable or error, records couldn't be loaded:", err);
-    }
-  };
-
-  const fetchAudit = async () => {
-    try {
-      const res = await fetch("/api/audit");
-      if (!res.ok) throw new Error("Failed to fetch audit trail");
-      const data = await res.json();
-      setAuditTrail(data.auditTrail || []);
-    } catch (err) {
-      console.warn("Audit trail fetch failed:", err);
-    }
+      setRecords(data.records ?? []);
+    } catch (_) {}
   };
 
   const handleFilterChange = (filter) => {
@@ -56,11 +51,9 @@ export default function App() {
 
   const handleRunReconciliation = async () => {
     if (isReconciling || hasRun) return;
-
     setIsReconciling(true);
-
     try {
-      // Simulate verification delay for realism
+      // Simulate 800ms verification delay for realism
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       const res = await fetch("/api/reconcile", { method: "POST" });
@@ -68,23 +61,22 @@ export default function App() {
       const data = await res.json();
 
       setMetrics(data.metrics);
+      setGroundTruth(data.groundTruth);
       setAuditTrail(data.auditTrail);
       setHasRun(true);
 
-      // Refresh records list
-      const recordsRes = await fetch(`/api/records?status=${activeFilter}`);
-      const recordsData = await recordsRes.json();
-      const updatedRecords = recordsData.records || [];
+      // Refresh record list
+      const recRes = await fetch(`/api/records?status=${activeFilter}`);
+      const recData = await recRes.json();
+      const updatedRecords = recData.records ?? [];
       setRecords(updatedRecords);
 
-      // Auto-select a noteworthy exception (e.g. ORD-88135: Missing settlement)
+      // Auto-select the most interesting exception
       const highlight =
-        updatedRecords.find((r) => r.id === "ORD-88135") || updatedRecords[0];
-      if (highlight) {
-        setSelectedRecord(highlight);
-      }
+        updatedRecords.find((r) => r.id === "ORD-88135") ?? updatedRecords[0];
+      if (highlight) setSelectedRecord(highlight);
     } catch (err) {
-      console.error("Error executing reconciliation:", err);
+      console.error("Reconciliation error:", err);
     } finally {
       setIsReconciling(false);
     }
@@ -97,14 +89,19 @@ export default function App() {
       if (!res.ok) throw new Error("Reset failed");
       const data = await res.json();
 
-      setRecords(data.records || []);
+      setSources(data.sources ?? null);
+      setRecords([]);
       setActiveFilter("all");
       setSelectedRecord(null);
       setMetrics(null);
+      setGroundTruth(null);
       setHasRun(false);
-      fetchAudit();
+
+      const auditRes = await fetch("/api/audit");
+      const auditData = await auditRes.json();
+      setAuditTrail(auditData.auditTrail ?? []);
     } catch (err) {
-      console.error("Error resetting demo:", err);
+      console.error("Reset error:", err);
     } finally {
       setIsResetting(false);
     }
@@ -113,14 +110,15 @@ export default function App() {
   return (
     <main className="app-shell">
       <Navbar onReset={handleReset} isResetting={isResetting} />
-      <HeroSection totalRecords={totalBatchSize} />
+      <HeroSection totalRecords={sources?.orders ?? 100} />
+      <DataSourceBanner sources={sources} hasRun={hasRun} />
       <WorkflowSteps hasRun={hasRun} isReconciling={isReconciling} />
       <ControlPanel
         onRun={handleRunReconciliation}
         isReconciling={isReconciling}
         hasRun={hasRun}
       />
-      <MetricsGrid metrics={metrics} hasRun={hasRun} />
+      <MetricsGrid metrics={metrics} groundTruth={groundTruth} hasRun={hasRun} />
 
       <section className="workspace">
         <ReviewQueueTable

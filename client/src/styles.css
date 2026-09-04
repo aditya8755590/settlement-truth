@@ -271,9 +271,86 @@ body {
   margin-right: 2px;
 }
 
+/* ── Data Source Banner ─────────────────────────────── */
+.data-source-banner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 22px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.data-source-label {
+  font: 500 10px "DM Mono", monospace;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.data-source-items {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.data-source-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.data-source-icon {
+  font-size: 13px;
+}
+
+.data-source-name {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.data-source-count {
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: #f0ece2;
+  border-radius: 4px;
+  padding: 2px 6px;
+  transition: all 0.3s ease;
+}
+
+.data-source-count.active {
+  background: #e4f1eb;
+  color: var(--green);
+}
+
+.data-source-arrow {
+  color: var(--line);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ── Ground-truth metric card ───────────────────────── */
+.ground-truth-metric {
+  border-left: 2px solid var(--gold);
+}
+
+.ground-truth-metric strong {
+  font-size: 22px !important;
+  letter-spacing: -0.5px !important;
+}
+
+/* ─────────────────────────────────────────────────── */
+
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1px;
   background: var(--line);
   border: 1px solid var(--line);
@@ -688,7 +765,11 @@ tr.selected-row td {
   }
 
   .metrics {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .data-source-banner {
+    gap: 10px;
   }
 
   .workflow-line {

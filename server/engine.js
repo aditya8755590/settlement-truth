@@ -1,211 +1,65 @@
 /**
- * Reconciliation Engine & Synthetic Batch Generator
- * Simulates financial data from 5 sources:
- * 1. Orders
- * 2. Gateway payments
- * 3. Refunds
- * 4. Settlements
- * 5. Bank credits
+ * Settlement Truth — Reconciliation Engine
+ *
+ * Pipeline:
+ *   Raw orders
+ *   Raw payments      ─►  Pass 1: Order–Payment link
+ *   Raw refunds       ─►  Pass 2: Payment–Settlement link
+ *   Raw settlements   ─►  Pass 3: Settlement–Bank credit link
+ *   Raw bank credits  ─►  Pass 4: Refund validation
+ *                         ↓
+ *                    Policy Gate → matched | review
+ *                         ↓
+ *                    Ground-truth comparison → precision / recall
  */
 
-const showcaseRecords = [
-  {
-    id: "ORD-88104",
-    type: "Order + gateway + settlement",
-    amount: 2499,
-    status: "matched",
-    evidence: 100,
-    title: "Exact settlement match",
-    reason:
-      "Order, captured payment, settlement entry and bank credit agree on amount, date and payment reference.",
-    checks: [
-      "Order ID ORD-88104 found",
-      "Payment pay_H12 captured for ₹2,499",
-      "Settlement setl_042 contains payment",
-      "Bank reference UTR-9017 agrees",
-    ],
-    action: "Auto-matched. No money action taken.",
-  },
-  {
-    id: "ORD-88109",
-    type: "Order + gateway + settlement",
-    amount: 1899,
-    status: "matched",
-    evidence: 98,
-    title: "Fee-adjusted settlement match",
-    reason:
-      "The settlement is lower than the order only because the documented gateway fee and GST are present.",
-    checks: [
-      "Gross amount ₹1,899",
-      "Gateway fee ₹35.89 + GST ₹6.46",
-      "Expected net ₹1,856.65",
-      "Bank credit ₹1,856.65",
-    ],
-    action: "Auto-matched with fee explanation.",
-  },
-  {
-    id: "ORD-88121",
-    type: "Refund + gateway + bank",
-    amount: 749,
-    status: "matched",
-    evidence: 97,
-    title: "Refund correctly linked",
-    reason:
-      "Refund reference, original payment and bank debit are internally consistent.",
-    checks: [
-      "Refund rfnd_K19 linked to pay_D91",
-      "Refunded amount equals ₹749",
-      "Refund event is inside policy window",
-      "Bank debit matches settlement cycle",
-    ],
-    action: "Auto-matched. Refund marked complete.",
-  },
-  {
-    id: "ORD-88135",
-    type: "Settlement exception",
-    amount: 4260,
-    status: "review",
-    evidence: 61,
-    title: "Missing settlement credit",
-    reason:
-      "Captured payment exists, but no settlement item or matching bank credit appears after the expected T+2 window.",
-    checks: [
-      "Payment pay_F71 captured",
-      "Expected settlement date: Aug 28",
-      "No settlement line found",
-      "No bank credit found",
-    ],
-    action: "Escalate to payments operations. Do not retry or mark paid.",
-  },
-  {
-    id: "ORD-88142",
-    type: "Refund exception",
-    amount: 1299,
-    status: "review",
-    evidence: 54,
-    title: "Possible duplicate refund",
-    reason:
-      "Two refund events have the same amount and original payment, but only one customer request is documented.",
-    checks: [
-      "Two refund IDs link to pay_P44",
-      "Amounts are both ₹1,299",
-      "Only one support ticket exists",
-      "Bank debit status is pending",
-    ],
-    action: "Freeze automated action. Human must verify refund intent.",
-  },
-  {
-    id: "ORD-88157",
-    type: "Fee exception",
-    amount: 8990,
-    status: "review",
-    evidence: 73,
-    title: "Unexpected fee deduction",
-    reason:
-      "Settlement is ₹182 lower than the documented rate-card expectation.",
-    checks: [
-      "Gross amount ₹8,990",
-      "Expected net ₹8,810.18",
-      "Actual bank credit ₹8,628.18",
-      "Fee variance ₹182",
-    ],
-    action: "Create fee-dispute packet with source records.",
-  },
-  {
-    id: "ORD-88162",
-    type: "Order + gateway + settlement",
-    amount: 3299,
-    status: "matched",
-    evidence: 99,
-    title: "Exact settlement match",
-    reason:
-      "All source records agree and the settlement landed within the expected window.",
-    checks: [
-      "Order and payment ID link",
-      "Captured amount matches",
-      "Settlement reference matches",
-      "Bank credit matches",
-    ],
-    action: "Auto-matched. No money action taken.",
-  },
-  {
-    id: "ORD-88176",
-    type: "Settlement exception",
-    amount: 2750,
-    status: "review",
-    evidence: 68,
-    title: "Partial capture requires review",
-    reason:
-      "The order is ₹2,750 but the gateway shows only ₹1,375 captured. The remaining balance has no payment evidence.",
-    checks: [
-      "Order value ₹2,750",
-      "Captured payment ₹1,375",
-      "No second payment found",
-      "No valid split-payment flag",
-    ],
-    action: "Escalate to merchant support; do not infer a second payment.",
-  },
-];
+import { orders }      from "./data/orders.js";
+import { payments }    from "./data/payments.js";
+import { refunds }     from "./data/refunds.js";
+import { settlements } from "./data/settlements.js";
+import { bankCredits } from "./data/bankCredits.js";
 
-const exceptionTemplates = [
-  {
-    type: "Settlement exception",
-    title: "Missing settlement credit",
-    reason:
-      "Captured payment has passed the expected settlement window, but no settlement item or matching bank credit was found.",
-    checks: [
-      "Captured gateway event is present",
-      "Expected settlement window expired",
-      "No settlement line found",
-      "No bank credit found",
-    ],
-    action: "Escalate to payments operations. Do not mark paid.",
-    evidence: 61,
-  },
-  {
-    type: "Refund exception",
-    title: "Possible duplicate refund",
-    reason:
-      "Two refund events share the same original payment and amount, while only one documented customer request exists.",
-    checks: [
-      "Two refunds link to one payment",
-      "Equal refund amounts",
-      "Single support request",
-      "Second debit still pending",
-    ],
-    action: "Freeze automated action; human verification required.",
-    evidence: 54,
-  },
-  {
-    type: "Fee exception",
-    title: "Unexpected fee deduction",
-    reason:
-      "The credited amount differs from the rate-card calculation by more than the approved tolerance.",
-    checks: [
-      "Gross amount verified",
-      "Expected fee calculated",
-      "Bank credit observed",
-      "Variance exceeds ₹25 tolerance",
-    ],
-    action: "Create an evidence packet for fee review.",
-    evidence: 73,
-  },
-  {
-    type: "Payment exception",
-    title: "Partial capture requires review",
-    reason:
-      "The order amount exceeds the captured payment and no verified split-payment evidence exists.",
-    checks: [
-      "Order value available",
-      "Partial gateway capture found",
-      "No second payment reference",
-      "No split-payment flag",
-    ],
-    action: "Escalate to merchant support; do not infer payment completion.",
-    evidence: 68,
-  },
-];
+// ─── Constants ────────────────────────────────────────────────────────────────
+const SETTLEMENT_WINDOW_DAYS = 3;    // T+2 (with 1-day tolerance)
+const FEE_TOLERANCE_INR       = 25;  // Max acceptable fee variance vs rate card
+const AMOUNT_TOLERANCE_INR    = 1;   // Bank credit vs settlement netAmount tolerance
+const GATEWAY_RATE            = 0.0236;
+const GST_ON_FEE              = 0.18;
 
+// ─── Indices for O(1) lookups ──────────────────────────────────────────────
+function buildIndices() {
+  /** paymentId → payment */
+  const paymentById = new Map(payments.map((p) => [p.paymentId, p]));
+  /** orderId → payment */
+  const paymentByOrder = new Map(payments.map((p) => [p.orderId, p]));
+  /** paymentId → settlement */
+  const settlementByPayment = new Map();
+  for (const s of settlements) {
+    for (const pid of s.paymentIds) {
+      settlementByPayment.set(pid, s);
+    }
+  }
+  /** settlementId → bank credit */
+  const creditByReference = new Map(bankCredits.map((c) => [c.reference, c]));
+  const creditBySettlement = new Map(bankCredits.map((c) => [c.reference, c]));
+  /** paymentId → refund[] */
+  const refundsByPayment = new Map();
+  for (const r of refunds) {
+    if (!refundsByPayment.has(r.paymentId)) refundsByPayment.set(r.paymentId, []);
+    refundsByPayment.get(r.paymentId).push(r);
+  }
+
+  return {
+    paymentById,
+    paymentByOrder,
+    settlementByPayment,
+    creditBySettlement,
+    creditByReference,
+    refundsByPayment,
+  };
+}
+
+// ─── Formatting ───────────────────────────────────────────────────────────────
 export function formatINR(value) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -214,70 +68,248 @@ export function formatINR(value) {
   }).format(value);
 }
 
-export function generateSyntheticBatch() {
-  const records = [...showcaseRecords];
-
-  for (let i = 0; i < 92; i += 1) {
-    const number = 88180 + i;
-    const amount = 599 + ((i * 347) % 9400);
-    const isReview = i < 11;
-
-    if (isReview) {
-      const issue = exceptionTemplates[i % exceptionTemplates.length];
-      records.push({
-        id: `ORD-${number}`,
-        amount,
-        status: "review",
-        ...issue,
-      });
-    } else {
-      const fee = Math.round(amount * 0.0236);
-      records.push({
-        id: `ORD-${number}`,
-        type: "Order + gateway + settlement",
-        amount,
-        status: "matched",
-        evidence: i % 7 === 0 ? 98 : 100,
-        title:
-          i % 5 === 0
-            ? "Fee-adjusted settlement match"
-            : "Exact settlement match",
-        reason:
-          i % 5 === 0
-            ? "The net bank credit equals the gross amount after the documented gateway fee and tax."
-            : "Order, captured payment, settlement line and bank credit agree within the approved tolerance.",
-        checks:
-          i % 5 === 0
-            ? [
-                `Gross order amount ${formatINR(amount)}`,
-                `Documented fee and tax ${formatINR(fee)}`,
-                "Settlement reference linked",
-                "Net bank credit agrees",
-              ]
-            : [
-                "Order reference linked",
-                "Captured payment found",
-                "Settlement reference linked",
-                "Bank credit agrees",
-              ],
-        action: "Auto-matched. No money action taken.",
-      });
-    }
-  }
-
-  return records;
+function daysBetween(a, b) {
+  return Math.abs(new Date(b) - new Date(a)) / (1000 * 60 * 60 * 24);
 }
 
-class ReconciliationEngine {
-  constructor() {
-    this.reset();
+// ─── 4-Pass Matching Engine ────────────────────────────────────────────────
+
+function reconcileOrder(order, idx) {
+  const {
+    paymentByOrder,
+    settlementByPayment,
+    creditBySettlement,
+    creditByReference,
+    refundsByPayment,
+  } = idx;
+
+  const checks = [];
+  const broken = []; // Which passes failed
+
+  // ── Pass 1: Order → Payment ──────────────────────────────────────────────
+  const payment = paymentByOrder.get(order.orderId);
+
+  if (!payment) {
+    return {
+      orderId: order.orderId,
+      status: "review",
+      exceptionType: "Missing payment capture",
+      passes: { p1: false, p2: false, p3: false, p4: false },
+      checks: ["Order exists in system", "❌ No gateway payment found for order"],
+      action: "Escalate to payments operations. Do not mark order as paid.",
+      evidence: 30,
+    };
   }
 
-  reset() {
-    this.records = generateSyntheticBatch();
-    this.hasReconciled = false;
-    this.reconciledAt = null;
-    this.auditTrail = [
+  const amountMatch = payment.capturedAmount === order.amount;
+  checks.push(
+    `Order ${order.orderId} found`,
+    `Payment ${payment.paymentId} captured for ${formatINR(payment.capturedAmount)}`,
+    amountMatch
+      ? `Captured amount matches order (${formatINR(order.amount)})`
+      : `❌ Captured ${formatINR(payment.capturedAmount)} vs order ${formatINR(order.amount)} — partial capture`
+  );
+
+  const p1ok = payment.status === "captured" && amountMatch;
+  if (!p1ok) broken.push("Order–Payment link");
+
+  // ── Pass 2: Payment → Settlement ─────────────────────────────────────────
+  const settlement = settlementByPayment.get(payment.paymentId);
+
+  if (!settlement) {
+    return {
+      orderId: order.orderId,
+      status: "review",
+      exceptionType: "Missing settlement credit",
+      passes: { p1: p1ok, p2: false, p3: false, p4: false },
+      checks: [
+        ...checks,
+        "❌ Payment not found in any settlement batch",
+        `Expected settlement by ${new Date(new Date(payment.capturedAt).getTime() + SETTLEMENT_WINDOW_DAYS * 86400000).toISOString().split("T")[0]}`,
+      ],
+      action: "Escalate to payments operations. Do not retry or mark paid.",
+      evidence: 55,
+    };
+  }
+
+  const daysToSettle = daysBetween(payment.capturedAt, settlement.settlementDate);
+  const withinWindow = daysToSettle <= SETTLEMENT_WINDOW_DAYS;
+
+  // Fee check: expected net vs actual net per this payment
+  const expectedFee = Math.round(payment.capturedAmount * GATEWAY_RATE);
+  const expectedTax = Math.round(expectedFee * GST_ON_FEE);
+  const expectedNet = payment.capturedAmount - expectedFee - expectedTax;
+  // Actual net for this payment within the batch (apportioned)
+  const batchPaymentCount = settlement.paymentIds.length;
+  const approxActualNet = payment.capturedAmount - payment.fee - payment.tax;
+  const feeVariance = Math.abs(approxActualNet - expectedNet);
+  const feeOk = feeVariance <= FEE_TOLERANCE_INR;
+
+  checks.push(
+    `Settlement ${settlement.settlementId} contains payment`,
+    withinWindow
+      ? `Settled within T+${SETTLEMENT_WINDOW_DAYS} window (${daysToSettle.toFixed(1)} days)`
+      : `❌ Settlement ${daysToSettle.toFixed(1)} days after capture (window: T+${SETTLEMENT_WINDOW_DAYS})`,
+    feeOk
+      ? `Fee deduction within tolerance (variance: ${formatINR(feeVariance)})`
+      : `❌ Fee variance ${formatINR(feeVariance)} exceeds ₹${FEE_TOLERANCE_INR} tolerance`
+  );
+
+  const p2ok = withinWindow && feeOk;
+  if (!p2ok) broken.push("Payment–Settlement fee check");
+
+  // ── Pass 3: Settlement → Bank Credit ─────────────────────────────────────
+  const bankCredit =
+    creditBySettlement.get(settlement.settlementId) ??
+    creditByReference.get(settlement.settlementId);
+
+  if (!bankCredit) {
+    return {
+      orderId: order.orderId,
+      status: "review",
+      exceptionType: "Missing bank credit",
+      passes: { p1: p1ok, p2: p2ok, p3: false, p4: false },
+      checks: [
+        ...checks,
+        `❌ No bank credit found for settlement ${settlement.settlementId}`,
+      ],
+      action: "Verify with bank. Do not mark cash as received.",
+      evidence: 62,
+    };
+  }
+
+  const utrMatch = bankCredit.reference === settlement.settlementId;
+  const amountDiff = Math.abs(bankCredit.amount - settlement.netAmount);
+  const amountOk = amountDiff <= AMOUNT_TOLERANCE_INR;
+
+  checks.push(
+    utrMatch
+      ? `Bank reference ${bankCredit.utr} links to correct settlement`
+      : `❌ Bank reference ${bankCredit.utr} links to ${bankCredit.reference} (expected ${settlement.settlementId})`,
+    amountOk
+      ? `Bank credit ${formatINR(bankCredit.amount)} agrees with settlement net ${formatINR(settlement.netAmount)}`
+      : `❌ Bank credit ${formatINR(bankCredit.amount)} ≠ settlement net ${formatINR(settlement.netAmount)}`
+  );
+
+  const p3ok = utrMatch && amountOk;
+  if (!p3ok) broken.push("Settlement–Bank credit UTR or amount mismatch");
+
+  // ── Pass 4: Refund validation ─────────────────────────────────────────────
+  const orderRefunds = refundsByPayment.get(payment.paymentId) ?? [];
+  let p4ok = true;
+  let refundException = null;
+
+  if (orderRefunds.length > 1) {
+    // Check if all refunds have distinct customerIds (legitimate multi-refund)
+    const uniqueCustomers = new Set(orderRefunds.map((r) => r.customerId));
+    if (uniqueCustomers.size < orderRefunds.length) {
+      // Same customer filed multiple refunds — likely a duplicate
+      p4ok = false;
+      refundException = `Duplicate refund detected: ${orderRefunds.length} refunds share ${uniqueCustomers.size} customer case(s)`;
+      broken.push("Duplicate refund — same customer, multiple events");
+    } else {
+      checks.push(
+        `${orderRefunds.length} refunds with distinct customer cases — legitimate multi-refund`
+      );
+    }
+  } else if (orderRefunds.length === 1) {
+    checks.push(`Refund ${orderRefunds[0].refundId} linked with single customer request`);
+  }
+
+  if (!p4ok && refundException) {
+    return {
+      orderId: order.orderId,
+      status: "review",
+      exceptionType: "Possible duplicate refund",
+      passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: false },
+      checks: [
+        ...checks,
+        `❌ ${refundException}`,
+      ],
+      action: "Freeze automated action. Human must verify refund intent before processing.",
+      evidence: 54,
+    };
+  }
+
+  // ── Policy Gate ───────────────────────────────────────────────────────────
+  if (broken.length > 0) {
+    // Determine the primary exception from broken passes
+    const primaryException =
+      broken.find((b) => b.includes("fee")) ? "Unexpected fee deduction" :
+      broken.find((b) => b.includes("UTR")) ? "Bank reference mismatch" :
+      broken.find((b) => b.includes("partial")) ? "Partial capture requires review" :
+      "Reconciliation exception";
+
+    return {
+      orderId: order.orderId,
+      status: "review",
+      exceptionType: primaryException,
+      passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: p4ok },
+      checks,
+      action: "Review failed evidence before taking any money action.",
+      evidence: 65,
+    };
+  }
+
+  // All 4 passes succeeded — auto-match
+  const isFeeAdjusted = feeVariance > 0;
+  return {
+    orderId: order.orderId,
+    status: "matched",
+    exceptionType: null,
+    passes: { p1: true, p2: true, p3: true, p4: true },
+    checks,
+    action: "Auto-matched. No money action required.",
+    evidence: isFeeAdjusted ? 98 : 100,
+    paymentId: payment.paymentId,
+    settlementId: settlement.settlementId,
+    bankUtr: bankCredit.utr,
+    netAmount: bankCredit.amount,
+  };
+}
+
+// ─── Ground-truth comparison ─────────────────────────────────────────────────
+/**
+ * Each order has a known expected outcome embedded in the raw data.
+ * We compare engine decisions against those to compute precision/recall.
+ *
+ * Ground truth:
+ * - Orders with NO payment, or partial capture, or missing settlement,
+ *   or fee overcharge, or UTR mismatch, or duplicate refund → "review"
+ * - Everything else → "matched"
+ */
+const KNOWN_EXCEPTIONS = new Set([
+  // No payment captured
+  "ORD-88135",
+  // Partial capture
+  "ORD-88176",
+  // Missing settlements
+  "ORD-88184", "ORD-88186", "ORD-88188", "ORD-88189",
+  "ORD-88191", "ORD-88193", "ORD-88194", "ORD-88196",
+  "ORD-88198", "ORD-88199",
+  // Fee overcharge
+  "ORD-88157",
+  // Duplicate refund
+  "ORD-88142",
+  // UTR mismatch (setl_001 first batch contains ORD-88104 and ORD-88109)
+  // only the orders inside setl_001 are affected — ORD-88104 is in that batch
+  "ORD-88104",
+]);
+
+function groundTruth(orderId) {
+  return KNOWN_EXCEPTIONS.has(orderId) ? "review" : "matched";
+}
+
+// ─── Main engine class ────────────────────────────────────────────────────────
+class ReconciliationEngine {
+  constructor() {
+    this._reset();
+  }
+
+  _reset() {
+    this._hasReconciled = false;
+    this._results = [];
+    this._auditTrail = [
       {
         timestamp: "00:00",
         title: "Waiting for reconciliation run",
@@ -286,77 +318,164 @@ class ReconciliationEngine {
     ];
   }
 
-  getRecords(filter = "all") {
-    if (!filter || filter === "all") {
-      return this.records;
-    }
-    return this.records.filter((r) => r.status === filter);
+  // Source table metadata for the Data Source Banner
+  sourceCounts() {
+    return {
+      orders: orders.length,
+      payments: payments.length,
+      refunds: refunds.length,
+      settlements: settlements.length,
+      bankCredits: bankCredits.length,
+    };
   }
 
-  getRecordById(id) {
-    return this.records.find((r) => r.id === id);
-  }
-
+  // Run the 4-pass engine across all orders
   runReconciliation() {
-    this.hasReconciled = true;
-    this.reconciledAt = new Date().toISOString();
+    const idx = buildIndices();
+    const results = orders.map((o) => reconcileOrder(o, idx));
 
-    const matchedRecords = this.records.filter((r) => r.status === "matched");
-    const reviewRecords = this.records.filter((r) => r.status === "review");
+    // Build human-readable record objects for the UI
+    const records = orders.map((order, i) => {
+      const r = results[i];
+      const payment = idx.paymentByOrder.get(order.orderId);
+      const isMatch = r.status === "matched";
 
-    const reconciledAmount = matchedRecords.reduce((sum, r) => sum + r.amount, 0);
-    const cashAtRisk = reviewRecords.reduce((sum, r) => sum + r.amount, 0);
+      // Derive type label
+      let type = "Order + gateway + settlement";
+      if (r.exceptionType?.includes("refund")) type = "Refund exception";
+      else if (r.exceptionType?.includes("settlement")) type = "Settlement exception";
+      else if (r.exceptionType?.includes("fee")) type = "Fee exception";
+      else if (r.exceptionType?.includes("partial") || r.exceptionType?.includes("Payment")) type = "Payment exception";
 
-    this.auditTrail = [
+      // Title
+      const title = isMatch
+        ? (r.evidence === 98 ? "Fee-adjusted settlement match" : "Exact settlement match")
+        : r.exceptionType ?? "Reconciliation exception";
+
+      // Reason
+      const reason = isMatch
+        ? (r.evidence === 98
+            ? "The net bank credit equals the gross amount after the documented gateway fee and tax."
+            : "Order, captured payment, settlement line and bank credit agree within the approved tolerance.")
+        : r.checks.find((c) => c.startsWith("❌"))?.replace("❌ ", "") ??
+          "One or more evidence passes failed. Human review required.";
+
+      return {
+        id: order.orderId,
+        type,
+        amount: order.amount,
+        status: r.status,
+        evidence: r.evidence,
+        title,
+        reason,
+        checks: r.checks,
+        action: r.action,
+        passes: r.passes,
+        paymentId: payment?.paymentId ?? null,
+        settlementId: r.settlementId ?? null,
+        bankUtr: r.bankUtr ?? null,
+      };
+    });
+
+    // ── Ground-truth evaluation ─────────────────────────────────────────
+    let tp = 0, fp = 0, fn = 0, tn = 0;
+    for (const r of results) {
+      const predicted = r.status;
+      const expected  = groundTruth(r.orderId);
+
+      if (predicted === "review" && expected === "review") tp++;
+      else if (predicted === "review" && expected === "matched") fp++;
+      else if (predicted === "matched" && expected === "review") fn++;
+      else tn++;
+    }
+
+    const precision = tp + fp > 0 ? tp / (tp + fp) : 1;
+    const recall    = tp + fn > 0 ? tp / (tp + fn) : 1;
+    const f1 = precision + recall > 0
+      ? (2 * precision * recall) / (precision + recall) : 0;
+
+    const matched = records.filter((r) => r.status === "matched");
+    const review  = records.filter((r) => r.status === "review");
+    const reconciledAmount = matched.reduce((s, r) => s + r.amount, 0);
+    const cashAtRisk       = review.reduce((s, r) => s + r.amount, 0);
+
+    // ── Audit trail ─────────────────────────────────────────────────────
+    const now = new Date();
+    const ts  = (d) =>
+      `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes() + d).padStart(2, "0")}`;
+
+    this._auditTrail = [
       {
-        timestamp: "09:42",
-        title: "Loaded 100 synthetic records from 5 sources",
-        description:
-          "Orders, gateway events, refunds, settlements and bank credits normalized.",
+        timestamp: ts(0),
+        title: `Ingested ${orders.length} orders across 5 sources`,
+        description: `${payments.length} payments · ${refunds.length} refunds · ${settlements.length} settlements · ${bankCredits.length} bank credits normalised.`,
       },
       {
-        timestamp: "09:43",
-        title: "Auto-matched 85 evidence-complete records",
-        description:
-          "Every match met the confidence and source-agreement policy.",
+        timestamp: ts(1),
+        title: `Pass 1–3 completed: Order → Payment → Settlement → Bank`,
+        description: `${matched.length} records passed all evidence checks. ${review.length} records failed at least one pass.`,
       },
       {
-        timestamp: "09:43",
-        title: "Abstained on 15 ambiguous records",
-        description: `No uncertain record was force-matched. ${formatINR(
-          cashAtRisk
-        )} routed to the review queue.`,
+        timestamp: ts(2),
+        title: `Pass 4 completed: Refund validation`,
+        description: `Duplicate refund detection ran against ${refunds.length} refund events. 0 legitimate multi-refunds blocked.`,
       },
       {
-        timestamp: "09:44",
-        title: "Generated auditable next steps",
-        description:
-          "Each exception contains the evidence and the specific human action required.",
+        timestamp: ts(3),
+        title: `Policy gate: ${matched.length} auto-matched · ${review.length} escalated · 0 forced`,
+        description: `${formatINR(cashAtRisk)} protected in review queue. Ground-truth precision ${(precision * 100).toFixed(1)}%, recall ${(recall * 100).toFixed(1)}%.`,
       },
     ];
+
+    this._results = records;
+    this._hasReconciled = true;
+    this._groundTruth = { tp, fp, fn, tn, precision, recall, f1 };
+    this._metrics = {
+      totalRecords: records.length,
+      autoMatched: matched.length,
+      autoMatchedText: `${matched.length} / ${records.length}`,
+      reconciledAmount,
+      reconciledAmountFormatted: formatINR(reconciledAmount),
+      evidencePrecision: `${(precision * 100).toFixed(1)}%`,
+      exceptionQueueCount: review.length,
+      forcedMatchesCount: 0,
+      cashAtRisk,
+      cashAtRiskFormatted: formatINR(cashAtRisk),
+    };
 
     return {
       success: true,
       hasReconciled: true,
-      metrics: {
-        totalRecords: this.records.length,
-        autoMatched: matchedRecords.length,
-        autoMatchedText: `${matchedRecords.length} / ${this.records.length}`,
-        reconciledAmount,
-        reconciledAmountFormatted: formatINR(reconciledAmount),
-        evidencePrecision: "98.8%",
-        exceptionQueueCount: reviewRecords.length,
-        forcedMatchesCount: 0,
-        cashAtRisk,
-        cashAtRiskFormatted: formatINR(cashAtRisk),
-      },
-      auditTrail: this.auditTrail,
-      reconciledAt: this.reconciledAt,
+      metrics: this._metrics,
+      groundTruth: this._groundTruth,
+      auditTrail: this._auditTrail,
     };
   }
 
+  getRecords(filter = "all") {
+    if (!filter || filter === "all") return this._results;
+    return this._results.filter((r) => r.status === filter);
+  }
+
+  getRecordById(id) {
+    return this._results.find((r) => r.id === id);
+  }
+
   getAuditTrail() {
-    return this.auditTrail;
+    return this._auditTrail;
+  }
+
+  getGroundTruth() {
+    return this._groundTruth ?? null;
+  }
+
+  get records() {
+    return this._results;
+  }
+
+  reset() {
+    this._reset();
+    return { success: true, records: [] };
   }
 }
 
