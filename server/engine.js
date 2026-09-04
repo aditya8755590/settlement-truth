@@ -11,13 +11,33 @@
  *                    Policy Gate → matched | review
  *                         ↓
  *                    Ground-truth comparison → precision / recall
+ *
+ * Runtime data injection:
+ *   engine.loadDataset(dataset)   — replace seed data with uploaded CSV data
+ *   engine.revertToSeed()         — go back to the original synthetic dataset
+ *   engine.getUploadState()       — returns upload metadata
  */
 
-import { orders }      from "./data/orders.js";
-import { payments }    from "./data/payments.js";
-import { refunds }     from "./data/refunds.js";
-import { settlements } from "./data/settlements.js";
-import { bankCredits } from "./data/bankCredits.js";
+import { orders as seedOrders }           from "./data/orders.js";
+import { payments as seedPayments }       from "./data/payments.js";
+import { refunds as seedRefunds }         from "./data/refunds.js";
+import { settlements as seedSettlements } from "./data/settlements.js";
+import { bankCredits as seedBankCredits } from "./data/bankCredits.js";
+
+// Active data sources — starts with seed data, can be swapped at runtime
+let _activeData = {
+  orders:      seedOrders,
+  payments:    seedPayments,
+  refunds:     seedRefunds,
+  settlements: seedSettlements,
+  bankCredits: seedBankCredits,
+  isCustom:    false,
+  uploadedAt:  null,
+  uploadMeta:  null,
+};
+
+// Convenience accessors used by engine internals
+const getData = () => _activeData;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SETTLEMENT_WINDOW_DAYS = 3;    // T+2 (with 1-day tolerance)
@@ -27,7 +47,8 @@ const GATEWAY_RATE            = 0.0236;
 const GST_ON_FEE              = 0.18;
 
 // ─── Indices for O(1) lookups ──────────────────────────────────────────────
-function buildIndices() {
+function buildIndices(data) {
+  const { payments, settlements, bankCredits, refunds } = data;
   /** paymentId → payment */
   const paymentById = new Map(payments.map((p) => [p.paymentId, p]));
   /** orderId → payment */
@@ -317,24 +338,75 @@ class ReconciliationEngine {
     ];
   }
 
+  // ── Runtime data injection ──────────────────────────────────────────────────
+
+  /**
+   * Replace the active dataset with uploaded CSV data.
+   * @param {{ orders, payments, refunds, settlements, bankCredits }} dataset
+   * @param {object} meta — upload metadata (filenames, row counts, etc.)
+   */
+  loadDataset(dataset, meta = {}) {
+    _activeData = {
+      orders:      dataset.orders      ?? seedOrders,
+      payments:    dataset.payments    ?? seedPayments,
+      refunds:     dataset.refunds     ?? seedRefunds,
+      settlements: dataset.settlements ?? seedSettlements,
+      bankCredits: dataset.bankCredits ?? seedBankCredits,
+      isCustom:    true,
+      uploadedAt:  new Date().toISOString(),
+      uploadMeta:  meta,
+    };
+    // Reset reconciliation state so the new data can be run
+    this._reset();
+    return { success: true, sources: this.sourceCounts() };
+  }
+
+  /** Revert to original synthetic seed data */
+  revertToSeed() {
+    _activeData = {
+      orders:      seedOrders,
+      payments:    seedPayments,
+      refunds:     seedRefunds,
+      settlements: seedSettlements,
+      bankCredits: seedBankCredits,
+      isCustom:    false,
+      uploadedAt:  null,
+      uploadMeta:  null,
+    };
+    this._reset();
+    return { success: true, sources: this.sourceCounts() };
+  }
+
+  /** Upload state metadata */
+  getUploadState() {
+    return {
+      isCustom:   _activeData.isCustom,
+      uploadedAt: _activeData.uploadedAt,
+      meta:       _activeData.uploadMeta,
+    };
+  }
+
   // Source table metadata for the Data Source Banner
   sourceCounts() {
+    const d = getData();
     return {
-      orders: orders.length,
-      payments: payments.length,
-      refunds: refunds.length,
-      settlements: settlements.length,
-      bankCredits: bankCredits.length,
+      orders:      d.orders.length,
+      payments:    d.payments.length,
+      refunds:     d.refunds.length,
+      settlements: d.settlements.length,
+      bankCredits: d.bankCredits.length,
+      isCustom:    d.isCustom,
     };
   }
 
   // Run the 4-pass engine across all orders
   runReconciliation() {
-    const idx = buildIndices();
-    const results = orders.map((o) => reconcileOrder(o, idx));
+    const d = getData();
+    const idx = buildIndices(d);
+    const results = d.orders.map((o) => reconcileOrder(o, idx));
 
     // Build human-readable record objects for the UI
-    const records = orders.map((order, i) => {
+    const records = d.orders.map((order, i) => {
       const r = results[i];
       const payment = idx.paymentByOrder.get(order.orderId);
       const isMatch = r.status === "matched";
@@ -400,14 +472,15 @@ class ReconciliationEngine {
 
     // ── Audit trail ─────────────────────────────────────────────────────
     const now = new Date();
-    const ts  = (d) =>
-      `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes() + d).padStart(2, "0")}`;
+    const ts  = (delta) =>
+      `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes() + delta).padStart(2, "0")}`;
+    const dataLabel = d.isCustom ? "uploaded" : "seed";
 
     this._auditTrail = [
       {
         timestamp: ts(0),
-        title: `Ingested ${orders.length} orders across 5 sources`,
-        description: `${payments.length} payments · ${refunds.length} refunds · ${settlements.length} settlements · ${bankCredits.length} bank credits normalised.`,
+        title: `Ingested ${d.orders.length} orders across 5 ${dataLabel} sources`,
+        description: `${d.payments.length} payments · ${d.refunds.length} refunds · ${d.settlements.length} settlements · ${d.bankCredits.length} bank credits normalised.`,
       },
       {
         timestamp: ts(1),

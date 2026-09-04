@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Navbar from "./components/Navbar";
 import HeroSection from "./components/HeroSection";
 import DataSourceBanner from "./components/DataSourceBanner";
+import DatasetUpload from "./components/DatasetUpload";
 import WorkflowSteps from "./components/WorkflowSteps";
 import ControlPanel from "./components/ControlPanel";
 import MetricsGrid from "./components/MetricsGrid";
@@ -21,17 +22,23 @@ export default function App() {
   const [hasRun, setHasRun] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isCustomDataset, setIsCustomDataset] = useState(false);
 
-  // On mount: load raw source counts and audit trail
+  // On mount: load raw source counts, audit trail, and upload state
   useEffect(() => {
     fetch("/api/sources")
       .then((r) => r.json())
-      .then(setSources)
+      .then((d) => { setSources(d); if (d.isCustom) setIsCustomDataset(true); })
       .catch(() => {});
 
     fetch("/api/audit")
       .then((r) => r.json())
       .then((d) => setAuditTrail(d.auditTrail ?? []))
+      .catch(() => {});
+
+    fetch("/api/upload/status")
+      .then((r) => r.json())
+      .then((d) => { if (d.isCustom) setIsCustomDataset(true); })
       .catch(() => {});
   }, []);
 
@@ -47,6 +54,36 @@ export default function App() {
   const handleFilterChange = (filter) => {
     setActiveFilter(filter);
     fetchRecords(filter);
+  };
+
+  // Called when CSV upload succeeds — refresh sources, reset reconciliation
+  const handleUploadSuccess = (newSources) => {
+    setSources(newSources);
+    setIsCustomDataset(true);
+    setHasRun(false);
+    setRecords([]);
+    setMetrics(null);
+    setGroundTruth(null);
+    setSelectedRecord(null);
+    fetch("/api/audit")
+      .then((r) => r.json())
+      .then((d) => setAuditTrail(d.auditTrail ?? []))
+      .catch(() => {});
+  };
+
+  // Called when user reverts to seed data
+  const handleClearDataset = (newSources) => {
+    setSources(newSources);
+    setIsCustomDataset(false);
+    setHasRun(false);
+    setRecords([]);
+    setMetrics(null);
+    setGroundTruth(null);
+    setSelectedRecord(null);
+    fetch("/api/audit")
+      .then((r) => r.json())
+      .then((d) => setAuditTrail(d.auditTrail ?? []))
+      .catch(() => {});
   };
 
   const handleRunReconciliation = async () => {
@@ -111,7 +148,12 @@ export default function App() {
     <main className="app-shell">
       <Navbar onReset={handleReset} isResetting={isResetting} />
       <HeroSection totalRecords={sources?.orders ?? 100} />
-      <DataSourceBanner sources={sources} hasRun={hasRun} />
+      <DataSourceBanner sources={sources} hasRun={hasRun} isCustom={isCustomDataset} />
+      <DatasetUpload
+        onUploadSuccess={handleUploadSuccess}
+        onClearDataset={handleClearDataset}
+        isCustom={isCustomDataset}
+      />
       <WorkflowSteps hasRun={hasRun} isReconciling={isReconciling} />
       <ControlPanel
         onRun={handleRunReconciliation}
