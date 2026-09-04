@@ -1,33 +1,38 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&display=swap");
 
-@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap");
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+}
 
 :root {
-  --bg: #0b0f14;
-  --bg-soft: #111720;
-  --panel: rgba(19, 26, 35, 0.88);
-  --panel-strong: #171f2a;
-  --panel-hover: #1d2835;
-  --line: rgba(184, 204, 222, 0.13);
-  --line-strong: rgba(184, 204, 222, 0.24);
+  --bg: #040914; /* Deep Navy from Dribbble */
+  --bg-soft: #0a0f1c;
+  --panel: rgba(10, 15, 28, 0.7);
+  --panel-strong: #0d1424;
+  --panel-hover: #131c33;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.15);
 
-  --text: #f4f7fb;
-  --text-muted: #93a0b2;
-  --text-faint: #5f6b7a;
+  --text: #ffffff;
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
 
-  --mint: #62e6b4;
-  --mint-soft: rgba(98, 230, 180, 0.12);
-  --cyan: #58b8ff;
-  --cyan-soft: rgba(88, 184, 255, 0.12);
+  --mint: #00F0FF; /* Changed to Cyan Neon */
+  --mint-soft: rgba(0, 240, 255, 0.12);
+  --cyan: #3b82f6; /* Changed to Electric Blue */
+  --cyan-soft: rgba(59, 130, 246, 0.12);
   --amber: #f4bd54;
   --amber-soft: rgba(244, 189, 84, 0.13);
-  --red: #ff6e75;
-  --red-soft: rgba(255, 110, 117, 0.13);
+  --red: #FF007A; /* Changed to Neon Magenta */
+  --red-soft: rgba(255, 0, 122, 0.13);
 
-  --radius-lg: 20px;
-  --radius-md: 14px;
+  --radius-lg: 24px;
+  --radius-md: 16px;
   --radius-sm: 10px;
-  --shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+  --shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
 }
 
 * {
@@ -43,10 +48,11 @@ body {
   min-width: 320px;
   color: var(--text);
   background:
-    radial-gradient(circle at 15% -5%, rgba(88, 184, 255, 0.14), transparent 27%),
-    radial-gradient(circle at 92% 9%, rgba(98, 230, 180, 0.11), transparent 26%),
-    linear-gradient(180deg, #0c1118 0%, #090d12 100%);
-  font-family: Manrope, Arial, sans-serif;
+    radial-gradient(ellipse at 80% -20%, rgba(0, 240, 255, 0.15), transparent 40%),
+    radial-gradient(ellipse at -20% 50%, rgba(255, 0, 122, 0.1), transparent 40%),
+    linear-gradient(180deg, #060814 0%, #02040a 100%);
+  background-attachment: fixed;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 

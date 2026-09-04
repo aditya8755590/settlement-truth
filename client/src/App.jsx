@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from "react";
-import Navbar from "./components/Navbar";
-import HeroSection from "./components/HeroSection";
-import DataSourceBanner from "./components/DataSourceBanner";
-import DatasetUpload from "./components/DatasetUpload";
-import WorkflowSteps from "./components/WorkflowSteps";
-import ControlPanel from "./components/ControlPanel";
 import MetricsGrid from "./components/MetricsGrid";
 import ReviewQueueTable from "./components/ReviewQueueTable";
 import ExplainPanel from "./components/ExplainPanel";
 import TruthTestTraps from "./components/TruthTestTraps";
 import AuditTrail from "./components/AuditTrail";
+import Hero from "./components/Hero";
+import TrustMetrics from "./components/TrustMetrics";
+import Features from "./components/Features";
+import AnalyticsView from "./components/AnalyticsView";
 
 export default function App() {
   const [sources, setSources] = useState(null);
@@ -147,29 +145,35 @@ export default function App() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-200 p-6 flex flex-col space-y-8">
       {/* Sleek Command Center Header */}
-      <header className="w-full max-w-7xl mx-auto flex items-center justify-between p-4 bg-slate-900 border border-slate-800 rounded-xl shadow-lg mt-6">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-[0_0_15px_rgba(52,211,153,0.3)]">
-            <span className="text-slate-950 font-bold text-lg leading-none">R</span>
+      <header className="w-full max-w-7xl mx-auto flex items-center justify-between p-5 bg-gradient-to-r from-[#0d1424] to-[#040914] border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] mt-6 relative overflow-hidden">
+        {/* Subtle glow behind header */}
+        <div className="absolute top-0 left-1/4 w-96 h-full bg-[#00F0FF]/10 blur-3xl pointer-events-none"></div>
+
+        <div className="flex items-center gap-5 relative z-10">
+          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#00F0FF] to-[#3b82f6] flex items-center justify-center shadow-[0_0_20px_rgba(0,240,255,0.4)]">
+            <span className="text-[#040914] font-bold text-xl leading-none">C</span>
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-100 tracking-tight">AI Finance Controller</h1>
-            <p className="text-xs text-slate-400">
+            <h1 className="text-2xl tracking-tight text-white m-0 leading-tight">
+              <span className="font-sans font-bold">Settlement Truth</span>{" "}
+              <span className="font-serif italic font-light text-[#00F0FF]">for Finance</span>
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5 tracking-wide uppercase">
               {isCustomDataset ? "Custom Dataset Active" : "Synthetic Demo Data Active"}
             </p>
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4 relative z-10">
           <button 
             onClick={handleReset} 
             disabled={isResetting}
-            className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700"
+            className="px-5 py-2.5 text-sm font-semibold text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all border border-white/10 backdrop-blur-md"
           >
             {isResetting ? "Resetting..." : "Reset Data"}
           </button>
 
-          <label className="cursor-pointer px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-lg border border-slate-700 transition-colors flex items-center gap-2">
+          <label className="cursor-pointer px-5 py-2.5 bg-white/5 hover:bg-white/10 text-slate-200 text-sm font-semibold rounded-full border border-white/10 backdrop-blur-md transition-all flex items-center gap-2">
             <span>{isCustomDataset ? "Upload More CSVs" : "Upload Custom CSVs"}</span>
             <input 
               type="file" 
@@ -197,20 +201,23 @@ export default function App() {
           <button 
             onClick={handleRunReconciliation}
             disabled={isReconciling || hasRun}
-            className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 disabled:from-slate-700 disabled:to-slate-800 disabled:text-slate-500 text-white text-sm font-bold rounded-lg transition-all shadow-[0_4px_14px_rgba(52,211,153,0.25)] flex items-center gap-2"
+            className="px-8 py-2.5 bg-white hover:bg-slate-200 disabled:bg-white/20 disabled:text-white/50 text-[#040914] text-sm font-bold rounded-full transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] flex items-center gap-2 tracking-wide"
           >
             {isReconciling ? (
               <span className="animate-pulse">Reconciling...</span>
             ) : hasRun ? (
               "Engine Complete"
             ) : (
-              <>
-                <span className="text-emerald-200">▶</span> Run Engine
-              </>
+              "Start Reconciliation"
             )}
           </button>
         </div>
       </header>
+
+      <Hero />
+      <TrustMetrics />
+      <Features />
+      <AnalyticsView />
 
       {/* Command Center Layout */}
       <div className="w-full max-w-7xl mx-auto space-y-6">
