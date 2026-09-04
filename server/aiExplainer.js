@@ -161,6 +161,13 @@ function deterministicFallback(evidence) {
       riskLevel: "high",
       breakpoint: "payment",
     },
+    "Duplicate payment capture": {
+      summary: `Order ${orderId} has multiple gateway payment records linked to it. ` +
+               `Pass 1 detected a duplicate capture — the customer was likely charged twice for the same order. ` +
+               `This requires immediate operations intervention before settlement to prevent dispute.`,
+      riskLevel: "high",
+      breakpoint: "payment",
+    },
   };
 
   // Map pass failure to layer

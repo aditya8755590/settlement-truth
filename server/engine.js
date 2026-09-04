@@ -51,8 +51,12 @@ function buildIndices(data) {
   const { payments, settlements, bankCredits, refunds } = data;
   /** paymentId → payment */
   const paymentById = new Map(payments.map((p) => [p.paymentId, p]));
-  /** orderId → payment */
-  const paymentByOrder = new Map(payments.map((p) => [p.orderId, p]));
+  /** orderId → payment[] */
+  const paymentsByOrder = new Map();
+  for (const p of payments) {
+    if (!paymentsByOrder.has(p.orderId)) paymentsByOrder.set(p.orderId, []);
+    paymentsByOrder.get(p.orderId).push(p);
+  }
   /** paymentId → settlement */
   const settlementByPayment = new Map();
   for (const s of settlements) {
@@ -72,7 +76,7 @@ function buildIndices(data) {
 
   return {
     paymentById,
-    paymentByOrder,
+    paymentsByOrder,
     settlementByPayment,
     creditBySettlement,
     creditByReference,
@@ -97,7 +101,7 @@ function daysBetween(a, b) {
 
 function reconcileOrder(order, idx) {
   const {
-    paymentByOrder,
+    paymentsByOrder,
     settlementByPayment,
     creditBySettlement,
     creditByReference,
@@ -108,7 +112,24 @@ function reconcileOrder(order, idx) {
   const broken = []; // Which passes failed
 
   // ── Pass 1: Order → Payment ──────────────────────────────────────────────
-  const payment = paymentByOrder.get(order.orderId);
+  const orderPayments = paymentsByOrder.get(order.orderId) || [];
+  
+  if (orderPayments.length > 1) {
+    return {
+      orderId: order.orderId,
+      status: "review",
+      exceptionType: "Duplicate payment capture",
+      passes: { p1: false, p2: false, p3: false, p4: false },
+      checks: [
+        "Order exists in system",
+        `❌ Multiple gateway payments found for order (${orderPayments.length} payments)`
+      ],
+      action: "Escalate immediately. Process refund for duplicate captures before settlement.",
+      evidence: 20,
+    };
+  }
+
+  const payment = orderPayments[0];
 
   if (!payment) {
     return {
@@ -408,7 +429,8 @@ class ReconciliationEngine {
     // Build human-readable record objects for the UI
     const records = d.orders.map((order, i) => {
       const r = results[i];
-      const payment = idx.paymentByOrder.get(order.orderId);
+      const payments = idx.paymentsByOrder.get(order.orderId) || [];
+      const payment = payments[0];
       const isMatch = r.status === "matched";
 
       // Derive type label

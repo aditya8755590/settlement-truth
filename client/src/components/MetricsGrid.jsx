@@ -40,8 +40,8 @@ export default function MetricsGrid({ metrics, groundTruth, hasRun }) {
         </small>
       </article>
 
-      <article>
-        <span>Cash at risk</span>
+      <article className="metric-critical">
+        <span>Total Money at Risk</span>
         <strong id="riskValue">
           {hasRun && metrics ? metrics.cashAtRiskFormatted : "—"}
         </strong>

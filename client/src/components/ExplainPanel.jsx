@@ -16,6 +16,26 @@ const BREAKPOINT_LABELS = {
   refund:      { icon: "↩", label: "Refund layer" },
 };
 
+function TimelineNode({ label, status, isLast }) {
+  let icon = "✓";
+  let className = "tl-node-ok";
+  if (status === "missing") {
+    icon = "✗";
+    className = "tl-node-missing";
+  } else if (status === "pending") {
+    icon = "○";
+    className = "tl-node-pending";
+  }
+
+  return (
+    <div className={`tl-node ${className}`}>
+      <div className="tl-icon">{icon}</div>
+      <div className="tl-label">{label}</div>
+      {!isLast && <div className="tl-line" />}
+    </div>
+  );
+}
+
 function PassBadge({ label, ok }) {
   return (
     <span className={`pass-badge ${ok ? "pass-ok" : "pass-fail"}`}>
@@ -86,6 +106,13 @@ export default function ExplainPanel({ record }) {
 
   const risk = aiResult ? (RISK_COLORS[aiResult.riskLevel] ?? RISK_COLORS.medium) : null;
   const bp = aiResult ? (BREAKPOINT_LABELS[aiResult.breakpoint] ?? BREAKPOINT_LABELS.order) : null;
+
+  // Derive visual timeline status
+  const p = record.passes || {};
+  const tOrder = "ok";
+  const tPayment = p.p1 ? "ok" : (isMatch ? "ok" : "missing");
+  const tSettlement = p.p1 ? (p.p2 ? "ok" : "missing") : "pending";
+  const tBank = p.p2 ? (p.p3 ? "ok" : "missing") : "pending";
 
   return (
     <aside className="explain-panel" id="explainPanel">
@@ -204,6 +231,24 @@ export default function ExplainPanel({ record }) {
               <p className="ai-summary-label">SAFE NEXT ACTION</p>
               <p className="ai-safe-action-text">{aiResult.safeAction}</p>
             </div>
+          </div>
+
+          {/* Visual Timeline (The Break in the Chain) */}
+          <div className="visual-timeline-card">
+            <p className="ai-summary-label">EVIDENCE TIMELINE</p>
+            <div className="visual-timeline">
+              <TimelineNode label="Order Placed" status={tOrder} />
+              <TimelineNode label="Gateway Captured" status={tPayment} />
+              <TimelineNode label="Batch Settled" status={tSettlement} />
+              <TimelineNode label="Bank Credit" status={tBank} isLast />
+            </div>
+          </div>
+
+          {/* Action Hub */}
+          <div className="action-hub">
+            <button className="btn-action btn-escalate">Escalate</button>
+            <button className="btn-action btn-resolve">Resolve</button>
+            <button className="btn-action btn-ignore">Ignore</button>
           </div>
 
           {/* Evidence JSON — the "receipts" judges love */}
