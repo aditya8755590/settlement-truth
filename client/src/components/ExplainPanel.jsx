@@ -163,7 +163,7 @@ export default function ExplainPanel({ record }) {
 
         {(showEvidence || aiState === "idle") && (
           <ul className="evidence-list">
-            {record.checks.map((check, idx) => (
+            {record.timeline.map((check, idx) => (
               <li key={idx} className={check.startsWith("❌") ? "check-fail" : ""}>
                 <span>{check.startsWith("❌") ? "✗" : "✓"}</span>
                 {check.replace("❌ ", "")}

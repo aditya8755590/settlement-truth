@@ -72,8 +72,8 @@ function buildEvidencePayload(record) {
     .filter(([, v]) => !v)
     .map(([k]) => k);
 
-  // Detect exact breakpoint from checks
-  const failedCheck = record.checks?.find((c) => c.startsWith("❌"))?.replace("❌ ", "") ?? null;
+  // Detect exact breakpoint from timeline
+  const failedCheck = record.timeline?.find((c) => c.startsWith("❌"))?.replace("❌ ", "") ?? null;
 
   return {
     orderId:       record.id,

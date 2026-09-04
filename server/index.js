@@ -79,8 +79,8 @@ app.get("/api/records/:id", (req, res) => {
 });
 
 // ─── Reconciliation ───────────────────────────────────────────────────────────────────
-app.post("/api/reconcile", (_req, res) => {
-  const result = engine.runReconciliation();
+app.post("/api/reconcile", async (_req, res) => {
+  const result = await engine.runReconciliation();
   res.json(result);
 });
 

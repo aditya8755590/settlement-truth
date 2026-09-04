@@ -108,7 +108,7 @@ function reconcileOrder(order, idx) {
     refundsByPayment,
   } = idx;
 
-  const checks = [];
+  const timeline = [];
   const broken = []; // Which passes failed
 
   // ── Pass 1: Order → Payment ──────────────────────────────────────────────
@@ -120,7 +120,7 @@ function reconcileOrder(order, idx) {
       status: "Anomaly",
       exceptionType: "Duplicate payment capture",
       passes: { p1: false, p2: false, p3: false, p4: false },
-      checks: [
+      timeline: [
         "Order exists in system",
         `❌ Multiple gateway payments found for order (${orderPayments.length} payments)`
       ],
@@ -137,14 +137,14 @@ function reconcileOrder(order, idx) {
       status: "Anomaly",
       exceptionType: "Missing payment capture",
       passes: { p1: false, p2: false, p3: false, p4: false },
-      checks: ["Order exists in system", "❌ No gateway payment found for order"],
+      timeline: ["Order exists in system", "❌ No gateway payment found for order"],
       action: "Escalate to payments operations. Do not mark order as paid.",
       evidence: 30,
     };
   }
 
   const amountMatch = payment.capturedAmount === order.amount;
-  checks.push(
+  timeline.push(
     `Order ${order.orderId} found`,
     `Payment ${payment.paymentId} captured for ${formatINR(payment.capturedAmount)}`,
     amountMatch
@@ -164,8 +164,8 @@ function reconcileOrder(order, idx) {
       status: "Anomaly",
       exceptionType: "Missing settlement credit",
       passes: { p1: p1ok, p2: false, p3: false, p4: false },
-      checks: [
-        ...checks,
+      timeline: [
+        ...timeline,
         "❌ Payment not found in any settlement batch",
         `Expected settlement by ${new Date(new Date(payment.capturedAt).getTime() + SETTLEMENT_WINDOW_DAYS * 86400000).toISOString().split("T")[0]}`,
       ],
@@ -187,7 +187,7 @@ function reconcileOrder(order, idx) {
   const feeVariance = Math.abs(approxActualNet - expectedNet);
   const feeOk = feeVariance <= FEE_TOLERANCE_INR;
 
-  checks.push(
+  timeline.push(
     `Settlement ${settlement.settlementId} contains payment`,
     withinWindow
       ? `Settled within T+${SETTLEMENT_WINDOW_DAYS} window (${daysToSettle.toFixed(1)} days)`
@@ -211,8 +211,8 @@ function reconcileOrder(order, idx) {
       status: "Anomaly",
       exceptionType: "Missing bank credit",
       passes: { p1: p1ok, p2: p2ok, p3: false, p4: false },
-      checks: [
-        ...checks,
+      timeline: [
+        ...timeline,
         `❌ No bank credit found for settlement ${settlement.settlementId}`,
       ],
       action: "Verify with bank. Do not mark cash as received.",
@@ -224,7 +224,7 @@ function reconcileOrder(order, idx) {
   const amountDiff = Math.abs(bankCredit.amount - settlement.netAmount);
   const amountOk = amountDiff <= AMOUNT_TOLERANCE_INR;
 
-  checks.push(
+  timeline.push(
     utrMatch
       ? `Bank reference ${bankCredit.utr} links to correct settlement`
       : `❌ Bank reference ${bankCredit.utr} links to ${bankCredit.reference} (expected ${settlement.settlementId})`,
@@ -250,12 +250,12 @@ function reconcileOrder(order, idx) {
       refundException = `Duplicate refund detected: ${orderRefunds.length} refunds share ${uniqueCustomers.size} customer case(s)`;
       broken.push("Duplicate refund — same customer, multiple events");
     } else {
-      checks.push(
+      timeline.push(
         `${orderRefunds.length} refunds with distinct customer cases — legitimate multi-refund`
       );
     }
   } else if (orderRefunds.length === 1) {
-    checks.push(`Refund ${orderRefunds[0].refundId} linked with single customer request`);
+    timeline.push(`Refund ${orderRefunds[0].refundId} linked with single customer request`);
   }
 
   if (!p4ok && refundException) {
@@ -264,8 +264,8 @@ function reconcileOrder(order, idx) {
       status: "Anomaly",
       exceptionType: "Possible duplicate refund",
       passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: false },
-      checks: [
-        ...checks,
+      timeline: [
+        ...timeline,
         `❌ ${refundException}`,
       ],
       action: "Freeze automated action. Human must verify refund intent before processing.",
@@ -287,7 +287,7 @@ function reconcileOrder(order, idx) {
       status: "Anomaly",
       exceptionType: primaryException,
       passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: p4ok },
-      checks,
+      timeline,
       action: "Review failed evidence before taking any money action.",
       evidence: 65,
     };
@@ -300,7 +300,7 @@ function reconcileOrder(order, idx) {
     status: "Cleared",
     exceptionType: null,
     passes: { p1: true, p2: true, p3: true, p4: true },
-    checks,
+    timeline,
     action: "Auto-matched. No money action required.",
     evidence: isFeeAdjusted ? 98 : 100,
     paymentId: payment.paymentId,
@@ -420,11 +420,23 @@ class ReconciliationEngine {
     };
   }
 
-  // Run the 4-pass engine across all orders
-  runReconciliation() {
+  // Run the 4-pass engine across all orders asynchronously in chunks
+  async runReconciliation() {
     const d = getData();
     const idx = buildIndices(d);
-    const results = d.orders.map((o) => reconcileOrder(o, idx));
+    
+    const results = [];
+    const CHUNK_SIZE = 1000;
+    
+    // Chunked processing to ensure zero thread-blocking
+    for (let i = 0; i < d.orders.length; i += CHUNK_SIZE) {
+      const chunk = d.orders.slice(i, i + CHUNK_SIZE);
+      for (const o of chunk) {
+        results.push(reconcileOrder(o, idx));
+      }
+      // Yield to the event loop
+      await new Promise(resolve => setImmediate(resolve));
+    }
 
     // Build human-readable record objects for the UI
     const records = d.orders.map((order, i) => {
@@ -450,7 +462,7 @@ class ReconciliationEngine {
         ? (r.evidence === 98
             ? "The net bank credit equals the gross amount after the documented gateway fee and tax."
             : "Order, captured payment, settlement line and bank credit agree within the approved tolerance.")
-        : r.checks.find((c) => c.startsWith("❌"))?.replace("❌ ", "") ??
+        : r.timeline.find((c) => c.startsWith("❌"))?.replace("❌ ", "") ??
           "One or more evidence passes failed. Human review required.";
 
       return {
@@ -461,7 +473,7 @@ class ReconciliationEngine {
         evidence: r.evidence,
         title,
         reason,
-        checks: r.checks,
+        timeline: r.timeline,
         action: r.action,
         passes: r.passes,
         paymentId: payment?.paymentId ?? null,
