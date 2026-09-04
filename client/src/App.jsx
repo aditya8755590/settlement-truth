@@ -146,21 +146,72 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-200 p-6 flex flex-col space-y-8">
-      <Navbar onReset={handleReset} isResetting={isResetting} />
-      <HeroSection totalRecords={sources?.orders ?? 100} />
-      <DataSourceBanner sources={sources} hasRun={hasRun} isCustom={isCustomDataset} />
-      <DatasetUpload
-        onUploadSuccess={handleUploadSuccess}
-        onClearDataset={handleClearDataset}
-        isCustom={isCustomDataset}
-      />
-      <WorkflowSteps hasRun={hasRun} isReconciling={isReconciling} />
-      <ControlPanel
-        onRun={handleRunReconciliation}
-        isReconciling={isReconciling}
-        hasRun={hasRun}
-      />
-      
+      {/* Sleek Command Center Header */}
+      <header className="w-full max-w-7xl mx-auto flex items-center justify-between p-4 bg-slate-900 border border-slate-800 rounded-xl shadow-lg mt-6">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-[0_0_15px_rgba(52,211,153,0.3)]">
+            <span className="text-slate-950 font-bold text-lg leading-none">R</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-slate-100 tracking-tight">AI Finance Controller</h1>
+            <p className="text-xs text-slate-400">
+              {isCustomDataset ? "Custom Dataset Active" : "Synthetic Demo Data Active"}
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={handleReset} 
+            disabled={isResetting}
+            className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700"
+          >
+            {isResetting ? "Resetting..." : "Reset Data"}
+          </button>
+
+          <label className="cursor-pointer px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-lg border border-slate-700 transition-colors flex items-center gap-2">
+            <span>{isCustomDataset ? "Upload More CSVs" : "Upload Custom CSVs"}</span>
+            <input 
+              type="file" 
+              multiple 
+              accept=".csv"
+              className="hidden" 
+              onChange={async (e) => {
+                const files = Array.from(e.target.files);
+                if (!files.length) return;
+                const formData = new FormData();
+                files.forEach(f => formData.append("files", f));
+                try {
+                  const res = await fetch("/api/upload", { method: "POST", body: formData });
+                  if (res.ok) {
+                    const data = await res.json();
+                    handleUploadSuccess(data.sources);
+                  }
+                } catch (err) {
+                  console.error(err);
+                }
+              }} 
+            />
+          </label>
+
+          <button 
+            onClick={handleRunReconciliation}
+            disabled={isReconciling || hasRun}
+            className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 disabled:from-slate-700 disabled:to-slate-800 disabled:text-slate-500 text-white text-sm font-bold rounded-lg transition-all shadow-[0_4px_14px_rgba(52,211,153,0.25)] flex items-center gap-2"
+          >
+            {isReconciling ? (
+              <span className="animate-pulse">Reconciling...</span>
+            ) : hasRun ? (
+              "Engine Complete"
+            ) : (
+              <>
+                <span className="text-emerald-200">▶</span> Run Engine
+              </>
+            )}
+          </button>
+        </div>
+      </header>
+
       {/* Command Center Layout */}
       <div className="w-full max-w-7xl mx-auto space-y-6">
         <MetricsGrid metrics={metrics} groundTruth={groundTruth} hasRun={hasRun} />
