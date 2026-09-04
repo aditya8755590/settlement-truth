@@ -291,9 +291,8 @@ const KNOWN_EXCEPTIONS = new Set([
   "ORD-88157",
   // Duplicate refund
   "ORD-88142",
-  // UTR mismatch (setl_001 first batch contains ORD-88104 and ORD-88109)
-  // only the orders inside setl_001 are affected — ORD-88104 is in that batch
-  "ORD-88104",
+  // UTR mismatch on setl_001 — all orders in that batch fail bank-credit link
+  "ORD-88104", "ORD-88109", "ORD-88121", "ORD-88162", "ORD-88180", "ORD-88181", "ORD-88182",
 ]);
 
 function groundTruth(orderId) {
