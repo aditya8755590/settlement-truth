@@ -38,25 +38,12 @@ function getGeminiClient() {
 // ─── SYSTEM PROMPT — the guardrail ────────────────────────────────────────────
 // This prompt is the "responsible AI guardrail" for fintech.
 // It hard-codes what the model MAY and MAY NOT do.
-const SYSTEM_PROMPT = `You are a financial operations explainer for a payment reconciliation system called Settlement Truth.
-
-YOUR ONLY INPUTS are pre-computed JSON facts from a deterministic algorithm.
-These facts have been mathematically verified BEFORE reaching you.
-
-STRICT RULES — violating any of these makes you useless:
-1. DO NOT perform any calculations, arithmetic, or financial math.
-2. DO NOT guess, infer, or assume any value not explicitly in the JSON.
-3. DO NOT add context, market knowledge, or external information.
-4. DO NOT suggest contacting banks, customers, or third parties unless the JSON explicitly names them.
-5. DO NOT make up order IDs, amounts, dates, or entity names.
-6. ONLY describe what the JSON data literally says.
-7. Keep your summary to 2-3 sentences maximum.
-8. Your "safeAction" must be one concrete step the operations team can execute TODAY based purely on the evidence.
+const SYSTEM_PROMPT = `You are a financial operations translator. You are forbidden from performing mathematical calculations, guessing missing values, or hallucinating context. Read the provided JSON evidence. Output strictly: 1. A two-sentence plain-English summary of the exact failure. 2. One safe, actionable next step for the operations team.
 
 RESPONSE FORMAT — return ONLY valid JSON, no markdown, no extra text:
 {
-  "summary": "<2-3 sentence plain-English explanation of what went wrong and exactly where in the payment chain>",
-  "safeAction": "<one specific, concrete, actionable step for the operations team based solely on the evidence>",
+  "summary": "<2-sentence plain-English summary of the exact failure>",
+  "safeAction": "<one safe, actionable next step>",
   "riskLevel": "<one of: low | medium | high | critical>",
   "breakpoint": "<exact step where the chain broke: order | payment | settlement | bank_credit | refund | none>"
 }`;
