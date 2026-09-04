@@ -145,7 +145,7 @@ export default function App() {
   };
 
   return (
-    <main className="app-shell">
+    <main className="min-h-screen bg-slate-950 text-slate-200 p-6 flex flex-col space-y-8">
       <Navbar onReset={handleReset} isResetting={isResetting} />
       <HeroSection totalRecords={sources?.orders ?? 100} />
       <DataSourceBanner sources={sources} hasRun={hasRun} isCustom={isCustomDataset} />
@@ -160,18 +160,26 @@ export default function App() {
         isReconciling={isReconciling}
         hasRun={hasRun}
       />
-      <MetricsGrid metrics={metrics} groundTruth={groundTruth} hasRun={hasRun} />
+      
+      {/* Command Center Layout */}
+      <div className="w-full max-w-7xl mx-auto space-y-6">
+        <MetricsGrid metrics={metrics} groundTruth={groundTruth} hasRun={hasRun} />
 
-      <section className="workspace">
-        <ReviewQueueTable
-          records={records}
-          activeFilter={activeFilter}
-          onFilterChange={handleFilterChange}
-          selectedRecord={selectedRecord}
-          onSelectRecord={setSelectedRecord}
-        />
-        <ExplainPanel record={selectedRecord} />
-      </section>
+        <section className="flex flex-col xl:flex-row gap-6 items-start w-full">
+          <div className="flex-1 w-full xl:w-2/3 overflow-hidden">
+            <ReviewQueueTable
+              records={records}
+              activeFilter={activeFilter}
+              onFilterChange={handleFilterChange}
+              selectedRecord={selectedRecord}
+              onSelectRecord={setSelectedRecord}
+            />
+          </div>
+          <aside className="w-full xl:w-1/3 shrink-0 xl:sticky xl:top-6">
+            <ExplainPanel record={selectedRecord} />
+          </aside>
+        </section>
+      </div>
 
       <TruthTestTraps />
       <AuditTrail auditTrail={auditTrail} />
