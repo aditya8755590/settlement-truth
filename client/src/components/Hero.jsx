@@ -13,10 +13,10 @@ export default function Hero() {
           The AI-native finance controller that detects anomalies, matches records instantly, and secures your revenue automatically.
         </p>
         <div className="flex items-center gap-4">
-          <button className="px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-full font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] transition-all flex items-center gap-2">
+          <button className="px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-[var(--text-primary)] rounded-full font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] transition-all flex items-center gap-2">
             Start Free Trial <span className="text-xl leading-none">&rarr;</span>
           </button>
-          <button className="px-8 py-4 bg-transparent border border-white/20 hover:border-white/40 hover:bg-white/5 text-slate-300 rounded-full font-semibold transition-all backdrop-blur-sm">
+          <button className="px-8 py-4 bg-transparent border border-[var(--border)] hover:border-white/40 hover:bg-white/5 text-slate-300 rounded-full font-semibold transition-all backdrop-blur-sm">
             Learn More
           </button>
         </div>
@@ -30,7 +30,7 @@ export default function Hero() {
         <motion.div
           animate={{ y: [0, -10, 0] }}
           transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-          className="relative z-10 w-full max-w-sm bg-[#0a0f1c]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+          className="relative z-10 w-full max-w-sm bg-[#0a0f1c]/80 backdrop-blur-xl border border-[var(--border)] rounded-2xl p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
         >
           <div className="flex items-center justify-between mb-6">
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-[0_0_15px_rgba(52,211,153,0.3)]">
@@ -47,11 +47,11 @@ export default function Hero() {
           </p>
           
           <div className="mt-8 space-y-3">
-            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-[var(--border-sub)]">
               <span className="text-sm font-medium text-slate-300">ORD-88135</span>
               <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md">Matched</span>
             </div>
-            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-[var(--border-sub)]">
               <span className="text-sm font-medium text-slate-300">ORD-12004</span>
               <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md">Matched</span>
             </div>

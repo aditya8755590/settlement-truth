@@ -55,6 +55,11 @@ app.use(express.json());
 // Session Middleware
 app.use((req, res, next) => {
   let sessionId = req.headers["x-session-id"];
+  if (!sessionId && req.headers.cookie) {
+    const match = req.headers.cookie.match(/sessionId=([^;]+)/);
+    if (match) sessionId = match[1];
+  }
+
   if (!sessionId) {
     sessionId = uuidv4();
     // Initialize seed data for new sessions implicitly
@@ -68,6 +73,7 @@ app.use((req, res, next) => {
   }
   req.sessionId = sessionId;
   res.setHeader("X-Session-Id", sessionId);
+  res.setHeader("Set-Cookie", `sessionId=${sessionId}; Path=/; HttpOnly`);
   next();
 });
 

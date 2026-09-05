@@ -35,7 +35,9 @@ function buildIndices(data) {
   }
   const settlementByPayment = new Map();
   for (const s of settlements) {
-    for (const pid of s.paymentIds) settlementByPayment.set(pid, s);
+    // paymentIds may be undefined/null/empty if the uploaded CSV didn't have that column
+    const ids = Array.isArray(s.paymentIds) ? s.paymentIds : [];
+    for (const pid of ids) settlementByPayment.set(pid, s);
   }
   const creditByReference = new Map(bankCredits.map((c) => [c.reference, c]));
   const creditBySettlement = new Map(bankCredits.map((c) => [c.reference, c]));
@@ -213,7 +215,7 @@ export async function runReconciliation(dataset, isCustom, options = {}) {
     { timestamp: ts(0), title: `Ingested ${dataset.orders.length} orders across 5 ${dataLabel} sources`, description: `${dataset.payments.length} payments · ${dataset.refunds.length} refunds · ${dataset.settlements.length} settlements · ${dataset.bankCredits.length} bank credits normalised.` },
     { timestamp: ts(1), title: `Pass 1–3 completed: Order → Payment → Settlement → Bank`, description: `${matched.length} records passed all evidence checks. ${review.length} records failed at least one pass.` },
     { timestamp: ts(2), title: `Pass 4 completed: Refund validation`, description: `Duplicate refund detection ran against ${dataset.refunds.length} refund events. 0 legitimate multi-refunds blocked.` },
-    { timestamp: ts(3), title: `Policy gate: ${matched.length} auto-matched · ${review.length} escalated · 0 forced`, description: `${formatCurrency(cashAtRisk, order.currency)} protected in review queue. Ground-truth precision ${(precision * 100).toFixed(1)}%, recall ${(recall * 100).toFixed(1)}%.` },
+    { timestamp: ts(3), title: `Policy gate: ${matched.length} auto-matched · ${review.length} escalated · 0 forced`, description: `${formatCurrency(cashAtRisk, dataset.orders[0]?.currency || "INR")} protected in review queue. Ground-truth precision ${(precision * 100).toFixed(1)}%, recall ${(recall * 100).toFixed(1)}%.` },
   ];
 
   return {
@@ -223,12 +225,12 @@ export async function runReconciliation(dataset, isCustom, options = {}) {
       autoMatched: matched.length,
       autoMatchedText: `${matched.length} / ${records.length}`,
       reconciledAmount,
-      reconciledAmountFormatted: formatCurrency(reconciledAmount, order.currency),
+      reconciledAmountFormatted: formatCurrency(reconciledAmount, dataset.orders[0]?.currency || "INR"),
       evidencePrecision: `${(precision * 100).toFixed(1)}%`,
       exceptionQueueCount: review.length,
       forcedMatchesCount: 0,
       cashAtRisk,
-      cashAtRiskFormatted: formatCurrency(cashAtRisk, order.currency),
+      cashAtRiskFormatted: formatCurrency(cashAtRisk, dataset.orders[0]?.currency || "INR"),
     },
     groundTruth: { tp, fp, fn, tn, precision, recall },
     auditTrail

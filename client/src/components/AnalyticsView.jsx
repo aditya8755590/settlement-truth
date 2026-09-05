@@ -32,7 +32,7 @@ export default function AnalyticsView() {
           whileInView={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
           viewport={{ once: true, amount: 0.2 }}
-          className="w-full bg-[#0d1424]/80 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-[0_30px_60px_rgba(0,0,0,0.6)] relative overflow-hidden group"
+          className="w-full bg-[#0d1424]/80 backdrop-blur-xl border border-[var(--border)] rounded-3xl p-8 shadow-[0_30px_60px_rgba(0,0,0,0.6)] relative overflow-hidden group"
         >
           {/* Ambient Glows */}
           <div className="absolute top-0 right-1/4 w-96 h-96 bg-[#9333ea]/10 blur-[100px] rounded-full pointer-events-none group-hover:bg-[#9333ea]/20 transition-colors duration-700"></div>
@@ -43,7 +43,7 @@ export default function AnalyticsView() {
               <p className="text-[10px] font-bold text-[#3b82f6] uppercase tracking-widest mb-2 font-sans">
                 PERFORMANCE INSIGHTS
               </p>
-              <h2 className="text-3xl font-bold text-white tracking-tight">
+              <h2 className="text-3xl font-bold text-[var(--text-primary)] tracking-tight">
                 Reconciliation <span className="font-serif italic font-light text-[#9333ea]">Velocity</span>
               </h2>
             </div>

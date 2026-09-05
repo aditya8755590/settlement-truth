@@ -204,11 +204,24 @@ function aggregatePayments(paymentRows) {
     const oid = p.orderId;
     if (!oid) continue;
     if (!byOrder.has(oid)) {
-      byOrder.set(oid, { orderId: oid, totalAmount: 0, method: p.method || "credit_card", installments: p.installments || 1 });
+      // Preserve the real paymentId from the first (sequence=1) row
+      byOrder.set(oid, {
+        orderId: oid,
+        paymentId: p.paymentId || null, // real ID from CSV if present
+        totalAmount: 0,
+        method: p.method || "credit_card",
+        installments: p.installments || 1,
+        capturedAt: p.capturedAt || null,
+      });
     }
     const agg = byOrder.get(oid);
     agg.totalAmount += p.capturedAmount || 0;
-    if ((p.sequence || 1) === 1) agg.method = p.method || agg.method;
+    if ((p.sequence || 1) === 1) {
+      agg.method = p.method || agg.method;
+      // Use the ID from sequence=1 payment as the primary ID
+      if (p.paymentId) agg.paymentId = p.paymentId;
+      if (p.capturedAt) agg.capturedAt = p.capturedAt;
+    }
   }
   return byOrder;
 }
@@ -366,7 +379,22 @@ export function buildDataset(parsed) {
     const amt = agg?.totalAmount || order.amount || 0;
     const fee = Math.round(amt * GATEWAY_RATE);
     const tax = Math.round(fee * GST_ON_FEE);
-    const p = { paymentId: `PAY-UP-${String(payIdx).padStart(6, "0")}`, orderId: order.orderId, capturedAmount: amt, method: agg?.method || "credit_card", installments: agg?.installments || 1, status: "captured", capturedAt: order.createdAt, fee, tax };
+    const capturedAt = agg?.capturedAt || order.createdAt;
+    // Use the real paymentId from CSV if it exists; otherwise generate a synthetic one
+    const paymentId = agg?.paymentId
+      ? agg.paymentId
+      : `PAY-UP-${String(payIdx).padStart(6, "0")}`;
+    const p = {
+      paymentId,
+      orderId: order.orderId,
+      capturedAmount: amt,
+      method: agg?.method || "credit_card",
+      installments: agg?.installments || 1,
+      status: "captured",
+      capturedAt,
+      fee,
+      tax,
+    };
     payments.push(p);
     paymentByOrder.set(order.orderId, p);
     payIdx++;
@@ -378,7 +406,82 @@ export function buildDataset(parsed) {
     return { ...r, paymentId: pay?.paymentId ?? null };
   }).filter((r) => r.paymentId !== null);
 
-  const settlements = settlementsResult?.rows?.length ? settlementsResult.rows : deriveSettlements(payments);
+  // If settlements came from an uploaded CSV, their paymentIds may be empty.
+  // Rebuild by matching each payment's expected settlement date to a settlement batch.
+  let settlements;
+  if (settlementsResult?.rows?.length) {
+    const rawSettlements = settlementsResult.rows;
+
+    // --- PRIMARY: If each settlement row already carries a paymentIds value in the CSV,
+    //     use it directly. This is the most reliable approach when the gateway export
+    //     includes the payment_ids column (e.g., Razorpay format).
+    const allHavePaymentIds = rawSettlements.every(s =>
+      Array.isArray(s.paymentIds) && s.paymentIds.filter(Boolean).length > 0
+    );
+
+    if (allHavePaymentIds) {
+      // Trust CSV paymentIds as-is — no date-based re-matching needed.
+      settlements = rawSettlements.map(s => ({
+        ...s,
+        paymentIds: s.paymentIds.filter(Boolean),
+      }));
+    } else {
+      // --- FALLBACK: Date-based matching — build a one-to-many map keyed by settlement ID,
+      //     not settlement date, to avoid collisions when multiple settlements share the same date.
+      // Build a map from settlementId → expected payment list via per-payment date proximity.
+      // Group settlements by date for lookup, but track ALL settlements per date (not just one).
+      const settlementsByDate = new Map();
+      for (const s of rawSettlements) {
+        const key = s.settlementDate ? String(s.settlementDate).split('T')[0] : null;
+        if (!key) continue;
+        if (!settlementsByDate.has(key)) settlementsByDate.set(key, []);
+        settlementsByDate.get(key).push(s);
+      }
+
+      // Assign each payment to the closest settlement by date, then round-robin across
+      // same-date settlements to avoid all payments landing on a single one.
+      const paymentIdsBySettlementId = new Map();
+      const roundRobinIdx = new Map(); // track round-robin index per date bucket
+      for (const p of payments) {
+        const base = (p.capturedAt || p.createdAt || '').split('T')[0];
+        if (!base) continue;
+        const d = new Date(base);
+        d.setDate(d.getDate() + 2);
+        const expectedDate = d.toISOString().split('T')[0];
+
+        let matchedSettlements = null;
+        let bestDiff = Infinity;
+        for (const [key, bucket] of settlementsByDate.entries()) {
+          const diff = Math.abs(new Date(key) - new Date(expectedDate)) / (1000 * 60 * 60 * 24);
+          if (diff <= 3 && diff < bestDiff) {
+            bestDiff = diff;
+            matchedSettlements = bucket;
+          }
+        }
+        if (!matchedSettlements || matchedSettlements.length === 0) continue;
+
+        // Round-robin assignment within same-date bucket to distribute payments evenly
+        const dateKey = matchedSettlements[0].settlementDate
+          ? String(matchedSettlements[0].settlementDate).split('T')[0]
+          : 'unknown';
+        const idx = (roundRobinIdx.get(dateKey) || 0) % matchedSettlements.length;
+        roundRobinIdx.set(dateKey, idx + 1);
+        const targetSettlement = matchedSettlements[idx];
+
+        if (!paymentIdsBySettlementId.has(targetSettlement.settlementId))
+          paymentIdsBySettlementId.set(targetSettlement.settlementId, []);
+        paymentIdsBySettlementId.get(targetSettlement.settlementId).push(p.paymentId);
+      }
+
+      settlements = rawSettlements.map(s => ({
+        ...s,
+        paymentIds: paymentIdsBySettlementId.get(s.settlementId) || (Array.isArray(s.paymentIds) ? s.paymentIds.filter(Boolean) : []),
+      }));
+    }
+  } else {
+    settlements = deriveSettlements(payments);
+  }
+
   const bankCredits = bankCreditsResult?.rows?.length ? bankCreditsResult.rows : deriveBankCredits(settlements);
 
   return { orders, payments, refunds, settlements, bankCredits };
