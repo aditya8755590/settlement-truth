@@ -68,7 +68,7 @@ function buildEvidencePayload(record) {
     exceptionType: record.title,         // title contains the exception type string
     evidenceScore: record.evidence,      // 0-100 confidence
     orderAmount:   record.amount,
-    currency:      "INR",
+    currency:      record.currency || "INR",
     passesPassed:  passed,               // ["p1", "p2"]
     passesFailed:  failed,               // ["p3", "p4"]
     exactFailure:  failedCheck,          // verbatim machine-generated text
@@ -101,7 +101,7 @@ function deterministicFallback(evidence) {
   // Exception cases — map exception type to precise explanation
   const explanations = {
     "Missing payment capture": {
-      summary: `Order ${orderId} (${formatINR(orderAmount)}) has no corresponding gateway payment record. ` +
+      summary: `Order ${orderId} (${formatCurrency(orderAmount, currency)}) has no corresponding gateway payment record. ` +
                `The order exists in the merchant system but Pass 1 found zero payment events. ` +
                `Cash has not moved — do not treat this order as paid.`,
       riskLevel: "critical",
@@ -122,7 +122,7 @@ function deterministicFallback(evidence) {
       breakpoint: "bank_credit",
     },
     "Unexpected fee deduction": {
-      summary: `Order ${orderId} (${formatINR(orderAmount)}) has a fee deduction outside the approved tolerance. ` +
+      summary: `Order ${orderId} (${formatCurrency(orderAmount, currency)}) has a fee deduction outside the approved tolerance. ` +
                `Pass 2 found the actual fee differs from the contracted gateway rate. ` +
                `${exactFailure ?? "Variance exceeds policy threshold"}.`,
       riskLevel: "medium",
@@ -175,9 +175,11 @@ function deterministicFallback(evidence) {
   };
 }
 
-function formatINR(v) {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(v);
+function formatCurrency(v, currency) {
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 0 }).format(v);
 }
+
+const _explanationCache = new Map();
 
 // ─── Main explain function ────────────────────────────────────────────────────
 /**
@@ -190,6 +192,10 @@ function formatINR(v) {
 export async function explainRecord(record) {
   // Step 1: Build the strictly typed evidence JSON from engine output
   const evidence = buildEvidencePayload(record);
+  
+  if (_explanationCache.has(record.id)) {
+    return _explanationCache.get(record.id);
+  }
 
   // Step 2: Try Gemini — fall back to deterministic if no key
   const gemini = getGeminiClient();
@@ -241,7 +247,7 @@ export async function explainRecord(record) {
       parsed.riskLevel = deterministicFallback(evidence).riskLevel;
     }
 
-    return {
+    const finalResult = {
       summary:    parsed.summary,
       safeAction: parsed.safeAction,
       riskLevel:  parsed.riskLevel,
@@ -249,6 +255,9 @@ export async function explainRecord(record) {
       evidence,
       source: "gemini",
     };
+    
+    _explanationCache.set(record.id, finalResult);
+    return finalResult;
   } catch (err) {
     // Network error, quota exceeded, etc. — always fall back gracefully
     console.error("[AI Explainer] Gemini error:", err.message);

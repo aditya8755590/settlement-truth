@@ -11,6 +11,10 @@ export default function App() {
   const [records, setRecords] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const RECORDS_PER_PAGE = 50;
+  
   const [metrics, setMetrics] = useState(null);
   const [groundTruth, setGroundTruth] = useState(null);
   const [auditTrail, setAuditTrail] = useState([]);
@@ -18,6 +22,8 @@ export default function App() {
   const [isReconciling, setIsReconciling] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isCustomDataset, setIsCustomDataset] = useState(false);
+  const [gatewayRate, setGatewayRate] = useState(2.36);
+  const [gstRate, setGstRate] = useState(18);
 
   // On mount: load raw source counts, audit trail, and upload state
   useEffect(() => {
@@ -37,18 +43,26 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  const fetchRecords = async (filter) => {
+  const fetchRecords = async (filter, page = 1) => {
     try {
-      const res = await fetch(`/api/records?status=${filter}`);
+      const offset = (page - 1) * RECORDS_PER_PAGE;
+      const res = await fetch(`/api/records?status=${filter}&limit=${RECORDS_PER_PAGE}&offset=${offset}`);
       if (!res.ok) return;
       const data = await res.json();
       setRecords(data.records ?? []);
+      setTotalPages(Math.max(1, Math.ceil(data.total / RECORDS_PER_PAGE)));
     } catch (_) {}
   };
 
   const handleFilterChange = (filter) => {
     setActiveFilter(filter);
-    fetchRecords(filter);
+    setCurrentPage(1);
+    fetchRecords(filter, 1);
+  };
+
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
+    fetchRecords(activeFilter, newPage);
   };
 
   // Called when CSV upload succeeds — refresh sources, reset reconciliation
@@ -88,7 +102,14 @@ export default function App() {
       // Simulate 800ms verification delay for realism
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      const res = await fetch("/api/reconcile", { method: "POST" });
+      const res = await fetch("/api/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gatewayRate: parseFloat(gatewayRate) / 100,
+          gstRate: parseFloat(gstRate) / 100,
+        })
+      });
       if (!res.ok) throw new Error("Reconciliation failed");
       const data = await res.json();
 
@@ -97,11 +118,13 @@ export default function App() {
       setAuditTrail(data.auditTrail);
       setHasRun(true);
 
-      // Refresh record list
-      const recRes = await fetch(`/api/records?status=${activeFilter}`);
+      // Refresh record list (page 1)
+      setCurrentPage(1);
+      const recRes = await fetch(`/api/records?status=${activeFilter}&limit=${RECORDS_PER_PAGE}&offset=0`);
       const recData = await recRes.json();
       const updatedRecords = recData.records ?? [];
       setRecords(updatedRecords);
+      setTotalPages(Math.max(1, Math.ceil(recData.total / RECORDS_PER_PAGE)));
 
       // Auto-select the most interesting exception
       const highlight =
@@ -125,6 +148,8 @@ export default function App() {
       setRecords([]);
       setActiveFilter("all");
       setSelectedRecord(null);
+      setCurrentPage(1);
+      setTotalPages(1);
       setMetrics(null);
       setGroundTruth(null);
       setHasRun(false);
@@ -183,6 +208,32 @@ export default function App() {
                    style={{ color: 'var(--text-muted)' }}>
                   {isCustomDataset ? 'Custom Dataset Active' : 'Synthetic Demo Data Active'}
                 </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Gateway Rate (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={gatewayRate}
+                  onChange={(e) => setGatewayRate(e.target.value)}
+                  disabled={hasRun || isReconciling}
+                  className="bg-transparent border rounded px-2 py-1 w-20 text-right focus:outline-none focus:border-[var(--accent)]"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Tax Rate (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={gstRate}
+                  onChange={(e) => setGstRate(e.target.value)}
+                  disabled={hasRun || isReconciling}
+                  className="bg-transparent border rounded px-2 py-1 w-20 text-right focus:outline-none focus:border-[var(--accent)]"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                />
               </div>
             </div>
 
@@ -245,6 +296,9 @@ export default function App() {
                   onFilterChange={handleFilterChange}
                   selectedRecord={selectedRecord}
                   onSelectRecord={setSelectedRecord}
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
                 />
               </div>
               <aside className="w-full xl:w-1/3 shrink-0 xl:sticky xl:top-6">

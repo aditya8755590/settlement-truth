@@ -14,6 +14,9 @@ export default function ReviewQueueTable({
   onFilterChange,
   selectedRecord,
   onSelectRecord,
+  currentPage,
+  totalPages,
+  onPageChange
 }) {
   return (
     <div className="bg-[#0d1424]/80 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
@@ -167,6 +170,31 @@ export default function ReviewQueueTable({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="p-4 border-t border-white/5 bg-[#040914]/80 flex items-center justify-between">
+          <span className="text-xs text-slate-400 font-sans">
+            Page <span className="text-white font-bold">{currentPage}</span> of {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none rounded border border-white/10 text-xs font-semibold text-slate-300 transition-colors"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none rounded border border-white/10 text-xs font-semibold text-slate-300 transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
