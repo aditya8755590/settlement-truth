@@ -1,0 +1,2 @@
+refund_id,order_id,customer_id,refund_amount,refund_created_at
+REF-001,ORD-TEST-004,CUST-004,950,2026-08-05T09:00:00.000Z
