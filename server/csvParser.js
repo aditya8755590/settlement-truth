@@ -371,65 +371,87 @@ export function buildDataset(parsed) {
     return { orderId: oid, merchantId: o.merchantId || "MID-UPLOAD", amount, currency: o.currency || "BRL", createdAt: o.createdAt || new Date().toISOString(), status: o.status || "delivered", customerId: o.customerId || null, expectedStatus: "paid" };
   });
 
-  let payIdx = 1;
-  const payments = [];
-  const paymentByOrder = new Map();
-  for (const order of orders) {
-    const agg = paymentAggMap.get(order.orderId);
-    const amt = agg?.totalAmount || order.amount || 0;
-    const fee = Math.round(amt * GATEWAY_RATE);
-    const tax = Math.round(fee * GST_ON_FEE);
-    const capturedAt = agg?.capturedAt || order.createdAt;
-    // Use the real paymentId from CSV if it exists; otherwise generate a synthetic one
-    const paymentId = agg?.paymentId
-      ? agg.paymentId
-      : `PAY-UP-${String(payIdx).padStart(6, "0")}`;
-    const p = {
-      paymentId,
-      orderId: order.orderId,
-      capturedAmount: amt,
-      method: agg?.method || "credit_card",
-      installments: agg?.installments || 1,
-      status: "captured",
-      capturedAt,
-      fee,
-      tax,
-    };
-    payments.push(p);
-    paymentByOrder.set(order.orderId, p);
-    payIdx++;
+  // ── Payments ─────────────────────────────────────────────────────────────────
+  // If the uploaded CSV has real payment_id values (gateway format), pass each
+  // row to the engine WITHOUT aggregating so that:
+  //   • Duplicate payments per order → engine flags Anomaly (>1 payment found)
+  //   • Missing payments for an order → engine flags Anomaly (0 payments found)
+  //   • Real fee/tax from the export are preserved
+  // If there is NO payment CSV at all (Olist-style), fall back to creating one
+  // synthetic payment per order from the aggregated data.
+
+  const paymentByOrder = new Map(); // first payment per order, used for refund linking
+  let payments;
+
+  if (paymentsResult?.rows?.length) {
+    // Direct mode: one engine payment per CSV row
+    let syntheticIdx = 1;
+    payments = paymentsResult.rows.map((p) => {
+      const amt = p.capturedAmount || 0;
+      const fallbackFee = Math.round(amt * GATEWAY_RATE);
+      const fallbackTax = Math.round(fallbackFee * GST_ON_FEE);
+      const entry = {
+        paymentId: p.paymentId || `PAY-UP-${String(syntheticIdx++).padStart(6, "0")}`,
+        orderId: p.orderId,
+        capturedAmount: amt,
+        method: p.method || "credit_card",
+        installments: p.installments || 1,
+        status: p.status || "captured",
+        capturedAt: p.capturedAt || new Date().toISOString(),
+        fee: (p.fee !== undefined && p.fee !== null) ? p.fee : fallbackFee,
+        tax: (p.tax !== undefined && p.tax !== null) ? p.tax : fallbackTax,
+      };
+      if (!paymentByOrder.has(p.orderId)) paymentByOrder.set(p.orderId, entry);
+      return entry;
+    });
+  } else {
+    // Synthetic mode (Olist-style): create one payment per order from aggregated data.
+    let payIdx = 1;
+    payments = [];
+    for (const order of orders) {
+      const agg = paymentAggMap.get(order.orderId);
+      const amt = agg?.totalAmount || order.amount || 0;
+      const fee = Math.round(amt * GATEWAY_RATE);
+      const tax = Math.round(fee * GST_ON_FEE);
+      const capturedAt = agg?.capturedAt || order.createdAt;
+      const paymentId = agg?.paymentId || `PAY-UP-${String(payIdx).padStart(6, "0")}`;
+      const p = {
+        paymentId,
+        orderId: order.orderId,
+        capturedAmount: amt,
+        method: agg?.method || "credit_card",
+        installments: agg?.installments || 1,
+        status: "captured",
+        capturedAt,
+        fee,
+        tax,
+      };
+      payments.push(p);
+      paymentByOrder.set(order.orderId, p);
+      payIdx++;
+    }
   }
 
   const rawRefunds = refundsResult?.rows?.length ? classifyReviews(refundsResult.rows) : [];
   const refunds = rawRefunds.map((r) => {
+    // If the refund CSV has a paymentId directly, use it; otherwise look up via orderId
     const pay = paymentByOrder.get(r.orderId);
-    return { ...r, paymentId: pay?.paymentId ?? null };
+    return { ...r, paymentId: r.paymentId || pay?.paymentId || null };
   }).filter((r) => r.paymentId !== null);
 
-  // If settlements came from an uploaded CSV, their paymentIds may be empty.
-  // Rebuild by matching each payment's expected settlement date to a settlement batch.
   let settlements;
   if (settlementsResult?.rows?.length) {
     const rawSettlements = settlementsResult.rows;
-
-    // --- PRIMARY: If each settlement row already carries a paymentIds value in the CSV,
-    //     use it directly. This is the most reliable approach when the gateway export
-    //     includes the payment_ids column (e.g., Razorpay format).
     const allHavePaymentIds = rawSettlements.every(s =>
       Array.isArray(s.paymentIds) && s.paymentIds.filter(Boolean).length > 0
     );
 
     if (allHavePaymentIds) {
-      // Trust CSV paymentIds as-is — no date-based re-matching needed.
       settlements = rawSettlements.map(s => ({
         ...s,
         paymentIds: s.paymentIds.filter(Boolean),
       }));
     } else {
-      // --- FALLBACK: Date-based matching — build a one-to-many map keyed by settlement ID,
-      //     not settlement date, to avoid collisions when multiple settlements share the same date.
-      // Build a map from settlementId → expected payment list via per-payment date proximity.
-      // Group settlements by date for lookup, but track ALL settlements per date (not just one).
       const settlementsByDate = new Map();
       for (const s of rawSettlements) {
         const key = s.settlementDate ? String(s.settlementDate).split('T')[0] : null;
@@ -438,12 +460,10 @@ export function buildDataset(parsed) {
         settlementsByDate.get(key).push(s);
       }
 
-      // Assign each payment to the closest settlement by date, then round-robin across
-      // same-date settlements to avoid all payments landing on a single one.
       const paymentIdsBySettlementId = new Map();
-      const roundRobinIdx = new Map(); // track round-robin index per date bucket
+      const roundRobinIdx = new Map(); 
       for (const p of payments) {
-        const base = (p.capturedAt || p.createdAt || '').split('T')[0];
+        const base = (p.capturedAt || '').split('T')[0];
         if (!base) continue;
         const d = new Date(base);
         d.setDate(d.getDate() + 2);
@@ -460,7 +480,6 @@ export function buildDataset(parsed) {
         }
         if (!matchedSettlements || matchedSettlements.length === 0) continue;
 
-        // Round-robin assignment within same-date bucket to distribute payments evenly
         const dateKey = matchedSettlements[0].settlementDate
           ? String(matchedSettlements[0].settlementDate).split('T')[0]
           : 'unknown';
