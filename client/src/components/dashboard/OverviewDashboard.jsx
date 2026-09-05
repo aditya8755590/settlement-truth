@@ -57,9 +57,11 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
     ].filter((o) => o.n > 0);
   }, [records]);
 
-  // Precision / recall from ground-truth comparison
-  const precision = parseFloat(metrics?.evidencePrecision || String(metrics?.groundTruth?.precision ?? 0));
-  const recall = metrics?.groundTruth?.recall ?? 0;
+  // Precision / recall from ground-truth comparison. Uploaded datasets have no
+  // ground-truth labels, so report N/A instead of a misleading 0%.
+  const hasGroundTruth = metrics?.evidencePrecision != null || metrics?.groundTruth?.precision != null;
+  const precision = hasGroundTruth ? parseFloat(metrics?.evidencePrecision || String(metrics?.groundTruth?.precision)) : null;
+  const recall = hasGroundTruth ? (metrics?.groundTruth?.recall ?? null) : null;
 
   // Real last-run time, taken from the newest engine audit entry (server-generated)
   const engineEntry = [...auditTrail].reverse().find((e) => /Pass 1–3|Policy gate/i.test(e.title || ''));

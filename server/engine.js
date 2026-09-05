@@ -201,6 +201,11 @@ export async function runReconciliation(dataset, isCustom, options = {}) {
     { timestamp: ts(3), title: `Policy gate: ${matched.length} auto-matched · ${review.length} escalated · 0 forced`, description: `${formatCurrency(cashAtRisk, dataset.orders[0]?.currency || "INR")} protected in review queue.` },
   ];
 
+  // No ground-truth labels exist for arbitrary uploaded datasets, so we cannot
+  // report a legitimate evidence-precision figure. Returning null lets the
+  // frontend render N/A instead of a misleading 0%.
+  const groundTruth = null;
+
   return {
     records,
     metrics: {
@@ -213,7 +218,9 @@ export async function runReconciliation(dataset, isCustom, options = {}) {
       forcedMatchesCount: 0,
       cashAtRisk,
       cashAtRiskFormatted: formatCurrency(cashAtRisk, dataset.orders[0]?.currency || "INR"),
+      evidencePrecision: null,
     },
+    groundTruth,
     auditTrail
   };
 }

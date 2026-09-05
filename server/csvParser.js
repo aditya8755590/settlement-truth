@@ -56,8 +56,8 @@ const COLUMN_ALIASES = {
   utr_number: "utr",
   reference: "reference",
   bank_reference: "reference",
-  credit_amount: "amount",
-  bank_amount: "amount",
+  credit_amount: "bankAmount",
+  bank_amount: "bankAmount",
   credit_date: "creditDate",
   value_date: "creditDate",
   refund_id: "refundId",
@@ -132,9 +132,29 @@ function normalizeCol(col) {
   return col.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
 }
 
+// A "merged" file is a single transaction-level CSV that packs columns from
+// multiple sources into every row (order + payment + settlement + bank credit).
+// When all four families are present, we classify it as one table and then
+// split it back into the per-source arrays during dataset construction.
+const MERGED_SIG = {
+  type: "merged",
+  requiredCols: ["order_id", "payment_id", "settlement_id", "utr"],
+  scoringCols: ["order_id", "amount", "payment_id", "captured_amount", "settlement_id", "net_amount", "utr", "reference"],
+  requiredEngine: [],
+  defaults: {},
+};
+
 export function detectTableType(headers) {
   const normalized = headers.map(normalizeCol);
   const normalizedSet = new Set(normalized);
+  const has = (...cols) => cols.some((c) => normalizedSet.has(c));
+
+  // Merged transaction file: order + payment + settlement + bank columns together.
+  if (has("order_id", "merchant_order_id", "id") && has("payment_id", "gateway_payment_id") &&
+      has("settlement_id") && has("utr", "utr_number")) {
+    return MERGED_SIG;
+  }
+
   let bestMatch = null;
   let bestScore = -1;
 
@@ -157,7 +177,7 @@ function mapRow(raw, sig) {
     const engineField = COLUMN_ALIASES[normCol];
     if (!engineField) continue;
     let value = String(rawVal ?? "").trim();
-    const numericFields = new Set(["amount", "capturedAmount", "netAmount", "fee", "tax", "refundAmount", "itemPrice", "freightValue", "score", "installments", "sequence"]);
+    const numericFields = new Set(["amount", "capturedAmount", "netAmount", "fee", "tax", "refundAmount", "itemPrice", "freightValue", "score", "installments", "sequence", "bankAmount"]);
     
     if (numericFields.has(engineField)) {
       value = parseFloat(value.replace(/[₹$€,\s]/g, "")) || 0;
@@ -279,6 +299,86 @@ function deriveBankCredits(settlements) {
   return settlements.map((s, i) => ({ utr: `UTR${String(i + 1).padStart(8, "0")}`, reference: s.settlementId, amount: s.netAmount, creditDate: s.settlementDate }));
 }
 
+function splitMergedDataset(rows) {
+  const orders = [];
+  const payments = [];
+  const settlements = [];
+  const bankCredits = [];
+  const refunds = [];
+  const orderByKey = new Map();
+
+  for (const r of rows) {
+    const oid = r.orderId;
+    if (!oid) continue;
+
+    const amount = Math.round(r.amount ?? r.capturedAmount ?? r.netAmount ?? 0);
+
+    let order = orderByKey.get(oid);
+    if (!order) {
+      order = {
+        orderId: oid,
+        merchantId: r.merchantId || "MID-UPLOAD",
+        amount,
+        currency: r.currency || "INR",
+        createdAt: r.createdAt || r.capturedAt || new Date().toISOString(),
+        status: r.status || "delivered",
+        customerId: r.customerId || null,
+        expectedStatus: "paid",
+      };
+      orderByKey.set(oid, order);
+      orders.push(order);
+    }
+
+    if (r.paymentId) {
+      const capturedAmount = Math.round(r.capturedAmount ?? amount);
+      const fallbackFee = Math.round(capturedAmount * GATEWAY_RATE);
+      const fallbackTax = Math.round(fallbackFee * GST_ON_FEE);
+      payments.push({
+        paymentId: r.paymentId,
+        orderId: oid,
+        capturedAmount,
+        method: r.method || "credit_card",
+        installments: r.installments || 1,
+        status: r.paymentStatus || "captured",
+        capturedAt: r.capturedAt || r.createdAt || new Date().toISOString(),
+        fee: r.fee !== undefined && r.fee !== null ? r.fee : fallbackFee,
+        tax: r.tax !== undefined && r.tax !== null ? r.tax : fallbackTax,
+      });
+    }
+
+    if (r.settlementId) {
+      settlements.push({
+        settlementId: r.settlementId,
+        paymentIds: r.paymentId ? [r.paymentId] : (Array.isArray(r.paymentIds) ? r.paymentIds : []),
+        settlementDate: r.settlementDate || r.settledAt || new Date().toISOString(),
+        netAmount: Math.round(r.netAmount ?? amount),
+      });
+    }
+
+    if (r.utr && r.reference) {
+      bankCredits.push({
+        utr: r.utr,
+        reference: r.reference,
+        amount: Math.round(r.bankAmount ?? r.netAmount ?? amount ?? 0),
+        creditDate: r.creditDate || new Date().toISOString(),
+      });
+    }
+
+    if (r.refundId) {
+      refunds.push({
+        refundId: r.refundId,
+        orderId: oid,
+        paymentId: r.paymentId || null,
+        customerId: r.customerId || null,
+        refundAmount: Math.round(r.refundAmount || 0),
+        refundStatus: r.refundStatus || "processed",
+      });
+    }
+  }
+
+  return { orders, payments, refunds, settlements, bankCredits };
+}
+
 export function parseCSVStream(filePath, filenameHint = "") {
   return new Promise((resolve) => {
     let rawHeaders = null;
@@ -354,6 +454,13 @@ export function parseCSVStream(filePath, filenameHint = "") {
 }
 
 export function buildDataset(parsed) {
+  // A single merged transaction CSV carries order+payment+settlement+bank
+  // columns in every row. Split it back into per-source arrays so real
+  // anomalies (missing payment, missing bank credit, duplicates) survive.
+  if (parsed.merged?.rows?.length && !parsed.orders?.rows?.length) {
+    return splitMergedDataset(parsed.merged.rows);
+  }
+
   const { orders: ordersResult, payments: paymentsResult, orderItems: itemsResult, refunds: refundsResult, settlements: settlementsResult, bankCredits: bankCreditsResult } = parsed;
   const itemTotalsMap = itemsResult?.rows?.length ? aggregateOrderItems(itemsResult.rows) : new Map();
   const paymentAggMap = paymentsResult?.rows?.length ? aggregatePayments(paymentsResult.rows) : new Map();
@@ -501,7 +608,12 @@ export function buildDataset(parsed) {
     settlements = deriveSettlements(payments);
   }
 
-  const bankCredits = bankCreditsResult?.rows?.length ? bankCreditsResult.rows : deriveBankCredits(settlements);
+  const bankCredits = bankCreditsResult?.rows?.length
+    ? bankCreditsResult.rows.map((c) => ({
+        ...c,
+        amount: c.amount ?? c.bankAmount ?? 0,
+      }))
+    : deriveBankCredits(settlements);
 
   return { orders, payments, refunds, settlements, bankCredits };
 }
