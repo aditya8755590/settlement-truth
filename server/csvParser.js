@@ -17,6 +17,12 @@ const COLUMN_ALIASES = {
   merchant_id: "merchantId",
   currency: "currency",
   order_status: "status",
+  status: "status",
+  gateway_ref: "gatewayRef",
+  payout_ref: "payoutRef",
+  gross_amount: "grossAmount",
+  fee_amount: "feeAmount",
+  bank_tx_id: "bankTxId",
   order_purchase_timestamp: "createdAt",
   order_approved_at: "approvedAt",
   order_delivered_carrier_date: "carrierDate",
@@ -60,6 +66,7 @@ const COLUMN_ALIASES = {
   bank_amount: "bankAmount",
   credit_date: "creditDate",
   value_date: "creditDate",
+  credited_at: "creditDate",
   refund_id: "refundId",
   review_id: "refundId",
   refund_amount: "refundAmount",
@@ -87,8 +94,8 @@ const TABLE_SIGNATURES = [
   {
     type: "payments",
     requiredCols: ["order_id"],
-    scoringCols: ["payment_value", "payment_type", "payment_sequential", "payment_installments", "payment_id", "captured_amount", "amount_paid"],
-    requiredEngine: ["orderId", "capturedAmount"],
+    scoringCols: ["payment_value", "payment_type", "payment_sequential", "payment_installments", "payment_id", "captured_amount", "amount_paid", "gateway_ref"],
+    requiredEngine: ["orderId"],
     defaults: { method: "credit_card", fee: 0, tax: 0, status: "captured" },
   },
   {
@@ -101,15 +108,15 @@ const TABLE_SIGNATURES = [
   {
     type: "settlements",
     requiredCols: ["settlement_id"],
-    scoringCols: ["settlement_date", "net_amount", "payment_ids", "settled_at", "settled_amount"],
+    scoringCols: ["settlement_date", "net_amount", "payment_ids", "settled_at", "settled_amount", "gateway_ref", "payout_ref", "gross_amount"],
     requiredEngine: ["settlementId", "netAmount"],
     defaults: {},
   },
   {
     type: "bankCredits",
-    requiredCols: ["utr"],
-    scoringCols: ["reference", "bank_reference", "credit_amount", "bank_amount", "credit_date", "value_date"],
-    requiredEngine: ["utr", "reference", "amount"],
+    requiredCols: ["utr", "reference", "payout_ref", "bank_tx_id"],
+    scoringCols: ["reference", "bank_reference", "credit_amount", "bank_amount", "credit_date", "value_date", "payout_ref", "bank_tx_id"],
+    requiredEngine: ["amount"],
     defaults: {},
   },
   {
@@ -117,7 +124,7 @@ const TABLE_SIGNATURES = [
     requiredCols: ["refund_id", "review_id"],
     scoringCols: ["customer_id", "refund_amount", "review_score", "refund_status", "review_comment_title", "review_creation_date"],
     requiredEngine: ["refundId"],
-    defaults: { refundAmount: 0, refundStatus: "processed" },
+    defaults: { refundStatus: "processed" },
   },
   {
     type: "customers",
@@ -177,13 +184,10 @@ function mapRow(raw, sig) {
     const engineField = COLUMN_ALIASES[normCol];
     if (!engineField) continue;
     let value = String(rawVal ?? "").trim();
-    const numericFields = new Set(["amount", "capturedAmount", "netAmount", "fee", "tax", "refundAmount", "itemPrice", "freightValue", "score", "installments", "sequence", "bankAmount"]);
+    const numericFields = new Set(["amount", "capturedAmount", "netAmount", "grossAmount", "feeAmount", "fee", "tax", "refundAmount", "itemPrice", "freightValue", "score", "installments", "sequence", "bankAmount"]);
     
     if (numericFields.has(engineField)) {
       value = parseFloat(value.replace(/[₹$€,\s]/g, "")) || 0;
-      if (engineField === "amount" || engineField === "capturedAmount" || engineField === "netAmount") {
-        value = Math.round(value);
-      }
     } else if (engineField === "paymentIds") {
       try { value = JSON.parse(value); } catch { value = value.split(",").map((s) => s.trim()).filter(Boolean); }
     }
@@ -472,9 +476,9 @@ export function buildDataset(parsed) {
     const items = itemTotalsMap.get(oid);
     const pay = paymentAggMap.get(oid);
     let amount = 0;
-    if (items) amount = Math.round(items.totalPrice + items.totalFreight);
+    if (o.amount !== undefined && o.amount !== null && o.amount !== 0) amount = o.amount;
+    else if (items) amount = Math.round(items.totalPrice + items.totalFreight);
     else if (pay) amount = pay.totalAmount;
-    else if (o.amount) amount = o.amount;
     return { orderId: oid, merchantId: o.merchantId || "MID-UPLOAD", amount, currency: o.currency || "BRL", createdAt: o.createdAt || new Date().toISOString(), status: o.status || "delivered", customerId: o.customerId || null, expectedStatus: "paid" };
   });
 
@@ -494,12 +498,13 @@ export function buildDataset(parsed) {
     // Direct mode: one engine payment per CSV row
     let syntheticIdx = 1;
     payments = paymentsResult.rows.map((p) => {
-      const amt = p.capturedAmount || 0;
+      const amt = p.capturedAmount ?? p.amount ?? 0;
       const fallbackFee = Math.round(amt * GATEWAY_RATE);
       const fallbackTax = Math.round(fallbackFee * GST_ON_FEE);
       const entry = {
         paymentId: p.paymentId || `PAY-UP-${String(syntheticIdx++).padStart(6, "0")}`,
         orderId: p.orderId,
+        gatewayRef: p.gatewayRef || null,
         capturedAmount: amt,
         method: p.method || "credit_card",
         installments: p.installments || 1,
@@ -539,7 +544,19 @@ export function buildDataset(parsed) {
     }
   }
 
-  const rawRefunds = refundsResult?.rows?.length ? classifyReviews(refundsResult.rows) : [];
+  const refundRows = refundsResult?.rows ?? [];
+  const isDirectRefund = (r) => r.refundId && (r.paymentId || !(r.score !== undefined && r.score !== null));
+  const directRefunds = refundRows.filter(isDirectRefund).map((r) => ({
+    refundId: r.refundId,
+    orderId: r.orderId || null,
+    paymentId: r.paymentId || null,
+    customerId: r.customerId || `CUST-${r.orderId}`,
+    refundAmount: r.refundAmount ?? r.amount ?? 0,
+    refundStatus: r.refundStatus || r.status || "processed",
+    reason: r.reason || null,
+  }));
+  const reviewRefunds = classifyReviews(refundRows.filter((r) => !isDirectRefund(r)));
+  const rawRefunds = [...directRefunds, ...reviewRefunds];
   const refunds = rawRefunds.map((r) => {
     // If the refund CSV has a paymentId directly, use it; otherwise look up via orderId
     const pay = paymentByOrder.get(r.orderId);
@@ -559,50 +576,122 @@ export function buildDataset(parsed) {
         paymentIds: s.paymentIds.filter(Boolean),
       }));
     } else {
-      const settlementsByDate = new Map();
-      for (const s of rawSettlements) {
-        const key = s.settlementDate ? String(s.settlementDate).split('T')[0] : null;
-        if (!key) continue;
-        if (!settlementsByDate.has(key)) settlementsByDate.set(key, []);
-        settlementsByDate.get(key).push(s);
-      }
-
-      const paymentIdsBySettlementId = new Map();
-      const roundRobinIdx = new Map(); 
+      // Preferred link: settlements reference the gateway capture reference
+      // (gateway_ref). Match each settlement to the payment(s) that share it.
+      // Settlements whose gateway_ref matches no payment stay unmatched (their
+      // paymentIds stay empty) so the engine can flag them as orphans.
+      const paymentsByGateway = new Map();
       for (const p of payments) {
-        const base = (p.capturedAt || '').split('T')[0];
-        if (!base) continue;
-        const d = new Date(base);
-        d.setDate(d.getDate() + 2);
-        const expectedDate = d.toISOString().split('T')[0];
-
-        let matchedSettlements = null;
-        let bestDiff = Infinity;
-        for (const [key, bucket] of settlementsByDate.entries()) {
-          const diff = Math.abs(new Date(key) - new Date(expectedDate)) / (1000 * 60 * 60 * 24);
-          if (diff <= 3 && diff < bestDiff) {
-            bestDiff = diff;
-            matchedSettlements = bucket;
-          }
-        }
-        if (!matchedSettlements || matchedSettlements.length === 0) continue;
-
-        const dateKey = matchedSettlements[0].settlementDate
-          ? String(matchedSettlements[0].settlementDate).split('T')[0]
-          : 'unknown';
-        const idx = (roundRobinIdx.get(dateKey) || 0) % matchedSettlements.length;
-        roundRobinIdx.set(dateKey, idx + 1);
-        const targetSettlement = matchedSettlements[idx];
-
-        if (!paymentIdsBySettlementId.has(targetSettlement.settlementId))
-          paymentIdsBySettlementId.set(targetSettlement.settlementId, []);
-        paymentIdsBySettlementId.get(targetSettlement.settlementId).push(p.paymentId);
+        if (!p.gatewayRef) continue;
+        if (!paymentsByGateway.has(p.gatewayRef)) paymentsByGateway.set(p.gatewayRef, []);
+        paymentsByGateway.get(p.gatewayRef).push(p);
       }
 
-      settlements = rawSettlements.map(s => ({
-        ...s,
-        paymentIds: paymentIdsBySettlementId.get(s.settlementId) || (Array.isArray(s.paymentIds) ? s.paymentIds.filter(Boolean) : []),
-      }));
+      const hasGatewayCol = rawSettlements.some((s) => s.gatewayRef);
+      const gatewayLinked = (s) => {
+        if (!s.gatewayRef) return null;
+        const matched = paymentsByGateway.get(s.gatewayRef);
+        return matched ? matched.map((p) => p.paymentId) : [];
+      };
+
+      if (hasGatewayCol) {
+        // Route every settlement that has a gateway_ref through gateway linking.
+        // Remaining rows (no gateway_ref) get the date-window heuristic.
+        const settlementsByDate = new Map();
+        for (const s of rawSettlements) {
+          const key = s.settlementDate ? String(s.settlementDate).split('T')[0] : null;
+          if (!key) continue;
+          if (!settlementsByDate.has(key)) settlementsByDate.set(key, []);
+          settlementsByDate.get(key).push(s);
+        }
+
+        const paymentIdsBySettlementId = new Map();
+        const roundRobinIdx = new Map();
+        const heuristicIds = (targetSettlement) => {
+          for (const p of payments) {
+            const base = (p.capturedAt || '').split('T')[0];
+            if (!base) continue;
+            const d = new Date(base);
+            d.setDate(d.getDate() + 2);
+            const expectedDate = d.toISOString().split('T')[0];
+
+            let matchedSettlements = null;
+            let bestDiff = Infinity;
+            for (const [key, bucket] of settlementsByDate.entries()) {
+              const diff = Math.abs(new Date(key) - new Date(expectedDate)) / (1000 * 60 * 60 * 24);
+              if (diff <= 3 && diff < bestDiff) {
+                bestDiff = diff;
+                matchedSettlements = bucket;
+              }
+            }
+            if (!matchedSettlements || matchedSettlements.length === 0) continue;
+
+            const dateKey = matchedSettlements[0].settlementDate
+              ? String(matchedSettlements[0].settlementDate).split('T')[0]
+              : 'unknown';
+            const idx = (roundRobinIdx.get(dateKey) || 0) % matchedSettlements.length;
+            roundRobinIdx.set(dateKey, idx + 1);
+            const target = matchedSettlements[idx];
+
+            if (!paymentIdsBySettlementId.has(target.settlementId))
+              paymentIdsBySettlementId.set(target.settlementId, []);
+            paymentIdsBySettlementId.get(target.settlementId).push(p.paymentId);
+          }
+          return paymentIdsBySettlementId.get(targetSettlement.settlementId) || [];
+        };
+
+        settlements = rawSettlements.map((s) => {
+          const gwIds = gatewayLinked(s);
+          const ids = gwIds !== null ? gwIds : (Array.isArray(s.paymentIds) ? s.paymentIds.filter(Boolean) : heuristicIds(s));
+          return { ...s, paymentIds: ids };
+        });
+      } else {
+        // No gateway_ref anywhere: date-window heuristic only.
+        const settlementsByDate = new Map();
+        for (const s of rawSettlements) {
+          const key = s.settlementDate ? String(s.settlementDate).split('T')[0] : null;
+          if (!key) continue;
+          if (!settlementsByDate.has(key)) settlementsByDate.set(key, []);
+          settlementsByDate.get(key).push(s);
+        }
+
+        const paymentIdsBySettlementId = new Map();
+        const roundRobinIdx = new Map();
+        for (const p of payments) {
+          const base = (p.capturedAt || '').split('T')[0];
+          if (!base) continue;
+          const d = new Date(base);
+          d.setDate(d.getDate() + 2);
+          const expectedDate = d.toISOString().split('T')[0];
+
+          let matchedSettlements = null;
+          let bestDiff = Infinity;
+          for (const [key, bucket] of settlementsByDate.entries()) {
+            const diff = Math.abs(new Date(key) - new Date(expectedDate)) / (1000 * 60 * 60 * 24);
+            if (diff <= 3 && diff < bestDiff) {
+              bestDiff = diff;
+              matchedSettlements = bucket;
+            }
+          }
+          if (!matchedSettlements || matchedSettlements.length === 0) continue;
+
+          const dateKey = matchedSettlements[0].settlementDate
+            ? String(matchedSettlements[0].settlementDate).split('T')[0]
+            : 'unknown';
+          const idx = (roundRobinIdx.get(dateKey) || 0) % matchedSettlements.length;
+          roundRobinIdx.set(dateKey, idx + 1);
+          const targetSettlement = matchedSettlements[idx];
+
+          if (!paymentIdsBySettlementId.has(targetSettlement.settlementId))
+            paymentIdsBySettlementId.set(targetSettlement.settlementId, []);
+          paymentIdsBySettlementId.get(targetSettlement.settlementId).push(p.paymentId);
+        }
+
+        settlements = rawSettlements.map(s => ({
+          ...s,
+          paymentIds: paymentIdsBySettlementId.get(s.settlementId) || (Array.isArray(s.paymentIds) ? s.paymentIds.filter(Boolean) : []),
+        }));
+      }
     }
   } else {
     settlements = deriveSettlements(payments);
@@ -612,6 +701,8 @@ export function buildDataset(parsed) {
     ? bankCreditsResult.rows.map((c) => ({
         ...c,
         amount: c.amount ?? c.bankAmount ?? 0,
+        payoutRef: c.payoutRef || null,
+        reference: c.reference || null,
       }))
     : deriveBankCredits(settlements);
 

@@ -21,7 +21,7 @@ export default function App() {
   const [uploadStatus, setUploadStatus] = useState(null); // 'uploading' | 'done' | 'error'
 
   // Settings
-  const [gatewayRate, setGatewayRate] = useState(2.36);
+  const [gatewayRate, setGatewayRate] = useState(2);
   const [gstRate, setGstRate] = useState(18);
 
   // Prevent concurrent runs

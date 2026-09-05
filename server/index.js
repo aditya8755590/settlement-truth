@@ -139,7 +139,7 @@ app.post("/api/reconcile", requireSession, async (req, res) => {
   
   // Accept custom rates if passed from frontend (Phase 2 feature)
   const options = {
-    gatewayRate: req.body.gatewayRate || 0.0236,
+    gatewayRate: req.body.gatewayRate || 0.02,
     gstRate: req.body.gstRate || 0.18,
   };
 
