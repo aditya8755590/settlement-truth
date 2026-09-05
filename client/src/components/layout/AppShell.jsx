@@ -73,14 +73,16 @@ export default function AppShell({
 
                   <div className="surface-card p-10 flex flex-col items-center text-center">
                     <div className="text-sm text-[var(--text-secondary)] mb-6 max-w-md">
-                      {hasRun
-                        ? `Last audit processed ${metrics?.totalRecords?.toLocaleString() || 0} orders and found ${metrics?.exceptionQueueCount || 0} exceptions.`
-                        : 'Upload your CSV files and click Start Audit to run the reconciliation engine.'}
+                      {!sources || sources.orders === 0
+                        ? 'No data loaded yet. Upload your CSV files using the Upload Data button above, then run the audit.'
+                        : hasRun
+                          ? `Last audit processed ${metrics?.totalRecords?.toLocaleString() || 0} orders and found ${metrics?.exceptionQueueCount || 0} exceptions.`
+                          : `${sources.orders?.toLocaleString() || 0} orders loaded. Click Start Audit to run the reconciliation engine.`}
                     </div>
                     <button
                       onClick={handleRunReconciliation}
-                      disabled={isReconciling}
-                      className="btn-primary"
+                      disabled={isReconciling || !sources || sources.orders === 0}
+                      className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {isReconciling ? 'Running Audit…' : hasRun ? 'Re-run Audit' : 'Start Audit'}
                     </button>

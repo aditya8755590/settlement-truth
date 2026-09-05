@@ -1,15 +1,9 @@
 import React from 'react';
-import { ArrowRight, CheckCircle2, XCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle2, XCircle, UploadCloud } from 'lucide-react';
 
-export default function CondensedLanding({ setAppMode, handleRunReconciliation }) {
+export default function CondensedLanding({ setAppMode }) {
   const handleStart = () => {
     setAppMode('product');
-  };
-
-  const handleRunSample = () => {
-    setAppMode('product');
-    // Run against the default seed data
-    handleRunReconciliation();
   };
 
   return (
@@ -48,11 +42,12 @@ export default function CondensedLanding({ setAppMode, handleRunReconciliation }
         </p>
         
         <div className="flex items-center gap-4 mb-20">
-          <button onClick={handleRunSample} className="btn-primary text-base px-6 py-3">
-            Run sample audit (seed data)
+          <button onClick={handleStart} className="btn-primary text-base px-6 py-3 flex items-center gap-2">
+            <UploadCloud className="w-5 h-5" />
+            Upload my CSVs
           </button>
           <button onClick={handleStart} className="btn-secondary text-base px-6 py-3">
-            Upload my own CSVs
+            Open Dashboard
           </button>
         </div>
 

@@ -8,11 +8,7 @@ import { runReconciliation } from "./engine.js";
 import { parseCSVStream, buildDataset } from "./csvParser.js";
 import { explainRecord } from "./aiExplainer.js";
 import { createSession, getSession, saveEngineResults, saveCases, appendAuditEntry, deleteSession } from "./db.js";
-import { orders as seedOrders } from "./data/orders.js";
-import { payments as seedPayments } from "./data/payments.js";
-import { refunds as seedRefunds } from "./data/refunds.js";
-import { settlements as seedSettlements } from "./data/settlements.js";
-import { bankCredits as seedBankCredits } from "./data/bankCredits.js";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,13 +58,13 @@ app.use((req, res, next) => {
 
   if (!sessionId) {
     sessionId = uuidv4();
-    // Initialize seed data for new sessions implicitly
+    // Start with a completely empty dataset — nothing until the user uploads CSVs
     createSession(sessionId, false, null, null, {
-      orders: seedOrders,
-      payments: seedPayments,
-      refunds: seedRefunds,
-      settlements: seedSettlements,
-      bankCredits: seedBankCredits,
+      orders: [],
+      payments: [],
+      refunds: [],
+      settlements: [],
+      bankCredits: [],
     });
   }
   req.sessionId = sessionId;
@@ -299,18 +295,18 @@ app.get("/api/upload/status", requireSession, (req, res) => {
 
 app.post("/api/upload/clear", (req, res) => {
   const sessionId = req.sessionId;
+  // Reset to empty — no seed data
   createSession(sessionId, false, null, null, {
-    orders: seedOrders,
-    payments: seedPayments,
-    refunds: seedRefunds,
-    settlements: seedSettlements,
-    bankCredits: seedBankCredits,
+    orders: [],
+    payments: [],
+    refunds: [],
+    settlements: [],
+    bankCredits: [],
   });
-  const session = getSession(sessionId);
   res.json({
     success: true,
-    message: "Reverted to seed dataset.",
-    sources: getSourceCounts(session.dataset, false),
+    message: "Cleared. Upload CSV files to begin.",
+    sources: getSourceCounts({ orders: [], payments: [], refunds: [], settlements: [], bankCredits: [] }, false),
   });
 });
 

@@ -43,6 +43,30 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
 
   }, [records]);
 
+  // Real per-category outcome counts — must be declared here (before early returns) to satisfy Rules of Hooks
+  const outcomes = useMemo(() => {
+    if (!records || records.length === 0) return [];
+    const anomaly = records.filter((r) => r.status === 'Anomaly' || r.status === 'Failed');
+    const byCause = (key) => anomaly.filter((r) => (r.title || r.type || '').toLowerCase().includes(key)).length;
+    return [
+      { label: 'Auto-matched', n: records.length - anomaly.length, pct: records.length ? ((records.length - anomaly.length) / records.length) * 100 : 0, color: 'bg-[var(--status-success)]' },
+      { label: 'Missing settlements', n: byCause('settlement'), pct: records.length ? (byCause('settlement') / records.length) * 100 : 0, color: 'bg-[var(--status-warning)]' },
+      { label: 'Fee deductions', n: byCause('fee'), pct: records.length ? (byCause('fee') / records.length) * 100 : 0, color: 'bg-[var(--status-warning)]' },
+      { label: 'Duplicate evidence', n: byCause('duplicate'), pct: records.length ? (byCause('duplicate') / records.length) * 100 : 0, color: 'bg-[var(--status-risk)]' },
+      { label: 'Partial captures', n: byCause('partial'), pct: records.length ? (byCause('partial') / records.length) * 100 : 0, color: 'bg-[var(--status-risk)]' },
+    ].filter((o) => o.n > 0);
+  }, [records]);
+
+  // Precision / recall from ground-truth comparison
+  const precision = parseFloat(metrics?.evidencePrecision || String(metrics?.groundTruth?.precision ?? 0));
+  const recall = metrics?.groundTruth?.recall ?? 0;
+
+  // Real last-run time, taken from the newest engine audit entry (server-generated)
+  const engineEntry = [...auditTrail].reverse().find((e) => /Pass 1–3|Policy gate/i.test(e.title || ''));
+  const lastRunAt = engineEntry
+    ? new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }) + ' · ' + engineEntry.timestamp
+    : 'not run yet';
+
   if (isReconciling) {
     return (
       <div className="flex flex-col items-center justify-center py-28 text-center">
@@ -71,29 +95,7 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
   const exceptions = metrics?.exceptionQueueCount || 0;
   const moneyAtRisk = metrics?.cashAtRisk || 0;
 
-  // Real per-category outcome counts, derived from the latest engine run
-  const outcomes = useMemo(() => {
-    if (!records || records.length === 0) return [];
-    const anomaly = records.filter((r) => r.status === 'Anomaly' || r.status === 'Failed');
-    const byCause = (key) => anomaly.filter((r) => (r.title || r.type || '').toLowerCase().includes(key)).length;
-    return [
-      { label: 'Auto-matched', n: records.length - anomaly.length, pct: records.length ? ((records.length - anomaly.length) / records.length) * 100 : 0, color: 'bg-[var(--status-success)]' },
-      { label: 'Missing settlements', n: byCause('settlement'), pct: records.length ? (byCause('settlement') / records.length) * 100 : 0, color: 'bg-[var(--status-warning)]' },
-      { label: 'Fee deductions', n: byCause('fee'), pct: records.length ? (byCause('fee') / records.length) * 100 : 0, color: 'bg-[var(--status-warning)]' },
-      { label: 'Duplicate evidence', n: byCause('duplicate'), pct: records.length ? (byCause('duplicate') / records.length) * 100 : 0, color: 'bg-[var(--status-risk)]' },
-      { label: 'Partial captures', n: byCause('partial'), pct: records.length ? (byCause('partial') / records.length) * 100 : 0, color: 'bg-[var(--status-risk)]' },
-    ].filter((o) => o.n > 0);
-  }, [records]);
 
-  // Precision / recall from ground-truth comparison
-  const precision = parseFloat(metrics?.evidencePrecision || String(metrics?.groundTruth?.precision ?? 0));
-  const recall = metrics?.groundTruth?.recall ?? 0;
-
-  // Real last-run time, taken from the newest engine audit entry (server-generated)
-  const engineEntry = [...auditTrail].reverse().find((e) => /Pass 1–3|Policy gate/i.test(e.title || ''));
-  const lastRunAt = engineEntry
-    ? new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }) + ' · ' + engineEntry.timestamp
-    : 'not run yet';
 
 
   return (

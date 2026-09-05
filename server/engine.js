@@ -14,26 +14,6 @@ const SETTLEMENT_WINDOW_DAYS = 3;
 const FEE_TOLERANCE_INR = 25;
 const AMOUNT_TOLERANCE_INR = 1;
 
-const KNOWN_EXCEPTIONS = new Set([
-  // Captured but never settled (money at risk)
-  "ORD-88135",
-  "ORD-88184", "ORD-88186", "ORD-88188", "ORD-88189",
-  "ORD-88191", "ORD-88193", "ORD-88194", "ORD-88196",
-  "ORD-88198", "ORD-88199",
-  // Duplicate payment capture
-  "ORD-88109",
-  // Fee discrepancies (creep + overcharge)
-  "ORD-88104", "ORD-88157",
-  // Duplicate refund pair
-  "ORD-88142",
-  // Partial capture
-  "ORD-88176",
-]);
-
-function groundTruth(orderId) {
-  return KNOWN_EXCEPTIONS.has(orderId) ? "Anomaly" : "Cleared";
-}
-
 function buildIndices(data) {
   const { payments = [], settlements = [], bankCredits = [], refunds = [] } = data;
   const paymentById = new Map(payments.map((p) => [p.paymentId, p]));
@@ -206,18 +186,6 @@ export async function runReconciliation(dataset, isCustom, options = {}) {
     return { id: order.orderId, currency: order.currency, type, amount: order.amount, status: r.status, evidence: r.evidence, title, reason, timeline: r.timeline, action: r.action, passes: r.passes, paymentId: payment?.paymentId ?? null, settlementId: r.settlementId ?? null, bankUtr: r.bankUtr ?? null };
   });
 
-  let tp = 0, fp = 0, fn = 0, tn = 0;
-  for (const r of results) {
-    const predicted = r.status;
-    const expected = groundTruth(r.orderId);
-    if (predicted === "Anomaly" && expected === "Anomaly") tp++;
-    else if (predicted === "Anomaly" && expected === "Cleared") fp++;
-    else if (predicted === "Cleared" && expected === "Anomaly") fn++;
-    else tn++;
-  }
-  const precision = tp + fp > 0 ? tp / (tp + fp) : 1;
-  const recall = tp + fn > 0 ? tp / (tp + fn) : 1;
-  
   const matched = records.filter(r => r.status === "Cleared");
   const review = records.filter(r => r.status === "Anomaly");
   const reconciledAmount = matched.reduce((s, r) => s + r.amount, 0);
@@ -225,13 +193,12 @@ export async function runReconciliation(dataset, isCustom, options = {}) {
 
   const now = new Date();
   const ts = (delta) => `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes() + delta).padStart(2, "0")}`;
-  const dataLabel = isCustom ? "uploaded" : "seed";
 
   const auditTrail = [
-    { timestamp: ts(0), title: `Ingested ${dataset.orders.length} orders across 5 ${dataLabel} sources`, description: `${dataset.payments.length} payments · ${dataset.refunds.length} refunds · ${dataset.settlements.length} settlements · ${dataset.bankCredits.length} bank credits normalised.` },
+    { timestamp: ts(0), title: `Ingested ${dataset.orders.length} orders across 5 sources`, description: `${dataset.payments.length} payments · ${dataset.refunds.length} refunds · ${dataset.settlements.length} settlements · ${dataset.bankCredits.length} bank credits normalised.` },
     { timestamp: ts(1), title: `Pass 1–3 completed: Order → Payment → Settlement → Bank`, description: `${matched.length} records passed all evidence checks. ${review.length} records failed at least one pass.` },
     { timestamp: ts(2), title: `Pass 4 completed: Refund validation`, description: `Duplicate refund detection ran against ${dataset.refunds.length} refund events. 0 legitimate multi-refunds blocked.` },
-    { timestamp: ts(3), title: `Policy gate: ${matched.length} auto-matched · ${review.length} escalated · 0 forced`, description: `${formatCurrency(cashAtRisk, dataset.orders[0]?.currency || "INR")} protected in review queue. Ground-truth precision ${(precision * 100).toFixed(1)}%, recall ${(recall * 100).toFixed(1)}%.` },
+    { timestamp: ts(3), title: `Policy gate: ${matched.length} auto-matched · ${review.length} escalated · 0 forced`, description: `${formatCurrency(cashAtRisk, dataset.orders[0]?.currency || "INR")} protected in review queue.` },
   ];
 
   return {
@@ -242,13 +209,11 @@ export async function runReconciliation(dataset, isCustom, options = {}) {
       autoMatchedText: `${matched.length} / ${records.length}`,
       reconciledAmount,
       reconciledAmountFormatted: formatCurrency(reconciledAmount, dataset.orders[0]?.currency || "INR"),
-      evidencePrecision: `${(precision * 100).toFixed(1)}%`,
       exceptionQueueCount: review.length,
       forcedMatchesCount: 0,
       cashAtRisk,
       cashAtRiskFormatted: formatCurrency(cashAtRisk, dataset.orders[0]?.currency || "INR"),
     },
-    groundTruth: { tp, fp, fn, tn, precision, recall },
     auditTrail
   };
 }
