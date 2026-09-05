@@ -83,7 +83,7 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
         <ShieldCheck className="w-16 h-16 text-[var(--border)] mb-4" />
         <h3 className="text-xl font-bold text-[var(--text-primary)]">No audit data yet</h3>
         <p className="text-[var(--text-secondary)] mt-2 text-sm max-w-sm">
-          Click <strong>Upload Data</strong> to load your CSV files, or use the <strong>Reconciliation</strong> tab to run the sample audit.
+          Click <strong>Upload Data</strong> to load your CSV files and begin reconciliation.
         </p>
       </div>
     );

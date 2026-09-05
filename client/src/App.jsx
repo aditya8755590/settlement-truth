@@ -140,7 +140,7 @@ export default function App() {
     }
   };
 
-  /** Called from landing page "Run sample audit" — runs on seed data */
+  /** Trigger a manual reconciliation run */
   const handleRunReconciliation = () => runReconciliation();
 
   const handleReset = async () => {
