@@ -3,105 +3,66 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 // ─── Card 1: Orphaned Charges ─────────────────────────────────────────────
 function OrphanedChargesCard() {
-  const [isOn, setIsOn] = useState(false);
+  const [showAnomaly, setShowAnomaly] = useState(false);
 
   return (
-    <div className="bento-card p-6 flex flex-col gap-5 h-full">
-      <div className="flex items-center justify-between">
+    <div className="surface-card p-5 flex flex-col gap-4 h-full">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Orphaned Charges</p>
-          <h3 className="text-base font-bold text-white">Customer Debited ≠ Merchant Credited</h3>
+          <p className="text-[11px] font-semibold uppercase tracking-widest mb-1"
+             style={{ color: 'var(--text-muted)' }}>
+            Orphaned Charges
+          </p>
+          <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+            Customer Debited ≠ Merchant Credited
+          </h3>
         </div>
-        <div className="w-9 h-9 rounded-full bg-red-500/15 border border-red-500/20 flex items-center justify-center">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="6" stroke="#ef4444" strokeWidth="1.5"/>
-            <path d="M8 5V8.5M8 10.5V11" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </div>
+        <div className="badge badge-risk shrink-0 mt-0.5">Critical</div>
       </div>
 
-      {/* Toggle state display */}
-      <div className="relative rounded-xl overflow-hidden bg-black/20 p-4">
+      {/* State display */}
+      <div className="rounded-lg overflow-hidden" style={{ background: 'var(--bg-base)', border: '1px solid var(--border-sub)' }}>
         <AnimatePresence mode="wait">
-          {!isOn ? (
-            <motion.div
-              key="normal"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="space-y-3"
-            >
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs">💳</div>
-                  <div>
-                    <p className="text-xs font-semibold text-white">Customer Card</p>
-                    <p className="text-[10px] text-slate-500">Axis Bank •••• 4891</p>
-                  </div>
-                </div>
-                <span className="text-sm font-bold text-red-400">-₹3,420</span>
+          {!showAnomaly ? (
+            <motion.div key="ok" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="p-3 space-y-2">
+              <TxRow icon="💳" label="Customer Card" sub="Axis Bank •••• 4891" amount="-₹3,420" status="ok" />
+              <div className="flex items-center gap-2 py-1">
+                <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+                <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>MATCHED</span>
+                <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
               </div>
-              <div className="flex items-center gap-2 justify-center">
-                <div className="h-px flex-1 bg-white/10" />
-                <span className="text-[10px] text-slate-600 font-mono">MATCHED</span>
-                <div className="h-px flex-1 bg-white/10" />
-              </div>
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center text-xs">🏦</div>
-                  <div>
-                    <p className="text-xs font-semibold text-white">Merchant Order</p>
-                    <p className="text-[10px] text-slate-500">ORD-88135 — Settled</p>
-                  </div>
-                </div>
-                <span className="text-sm font-bold text-emerald-400">+₹3,420</span>
-              </div>
+              <TxRow icon="🏦" label="Merchant Order" sub="ORD-88135 — Settled" amount="+₹3,420" status="ok" />
             </motion.div>
           ) : (
-            <motion.div
-              key="orphaned"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="space-y-3"
-            >
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-red-500/20 flex items-center justify-center text-xs">💳</div>
-                  <div>
-                    <p className="text-xs font-semibold text-white">Customer Card</p>
-                    <p className="text-[10px] text-red-400">Charged ₹3,420</p>
-                  </div>
-                </div>
-                <span className="text-sm font-bold text-red-400">-₹3,420</span>
+            <motion.div key="err" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="p-3 space-y-2">
+              <TxRow icon="💳" label="Customer Card" sub="Charged ₹3,420" amount="-₹3,420" status="risk" />
+              <div className="flex items-center gap-2 py-1">
+                <div className="flex-1 h-px" style={{ background: 'rgba(248,113,113,0.3)' }} />
+                <span className="text-[10px] font-mono" style={{ color: 'var(--status-risk)' }}>ORPHANED</span>
+                <div className="flex-1 h-px" style={{ background: 'rgba(248,113,113,0.3)' }} />
               </div>
-              <div className="flex items-center gap-2 justify-center">
-                <div className="h-px flex-1 bg-red-500/30" />
-                <span className="text-[10px] text-red-400 font-mono">ORPHANED</span>
-                <div className="h-px flex-1 bg-red-500/30" />
-              </div>
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs">❌</div>
-                  <div>
-                    <p className="text-xs font-semibold text-white">Merchant Order</p>
-                    <p className="text-[10px] text-slate-500">Missing in settlements</p>
-                  </div>
-                </div>
-                <span className="text-sm font-bold text-slate-600">₹0</span>
-              </div>
+              <TxRow icon="❌" label="Merchant Order" sub="Missing in settlements" amount="₹0" status="muted" />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
       {/* Toggle */}
-      <div className="flex items-center justify-between mt-auto">
-        <span className="text-xs text-slate-500">{isOn ? 'Showing anomaly' : 'Normal state'}</span>
+      <div className="flex items-center justify-between mt-auto pt-1">
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          {showAnomaly ? 'Showing anomaly state' : 'Normal state'}
+        </span>
         <button
-          onClick={() => setIsOn(!isOn)}
-          className={`relative w-11 h-6 rounded-full transition-colors duration-300 ${isOn ? 'bg-red-500' : 'bg-white/10'}`}
+          onClick={() => setShowAnomaly(v => !v)}
+          className="relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0"
+          style={{ background: showAnomaly ? 'var(--status-risk)' : 'var(--border)' }}
         >
           <motion.div
-            animate={{ x: isOn ? 22 : 2 }}
-            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-            className="absolute top-1 w-4 h-4 rounded-full bg-white shadow"
+            animate={{ x: showAnomaly ? 20 : 2 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+            className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm"
           />
         </button>
       </div>
@@ -109,66 +70,78 @@ function OrphanedChargesCard() {
   );
 }
 
-// ─── Card 2: Gateway Fee Creep ─────────────────────────────────────────────
+function TxRow({ icon, label, sub, amount, status }) {
+  const amountColor = status === 'ok' && amount.startsWith('+')
+    ? 'var(--status-success)'
+    : status === 'risk' || amount.startsWith('-')
+    ? 'var(--status-risk)'
+    : 'var(--text-muted)';
+
+  return (
+    <div className="flex items-center justify-between p-2 rounded-md"
+         style={{ background: 'var(--bg-surface)' }}>
+      <div className="flex items-center gap-2">
+        <span className="text-xs w-5 text-center">{icon}</span>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{label}</p>
+          <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{sub}</p>
+        </div>
+      </div>
+      <span className="text-xs font-bold tabular-nums" style={{ color: amountColor }}>{amount}</span>
+    </div>
+  );
+}
+
+// ─── Card 2: Fee Creep ────────────────────────────────────────────────────
 function FeeCreepCard() {
   return (
-    <div className="bento-card p-6 flex flex-col gap-5 h-full">
-      <div className="flex items-center justify-between">
+    <div className="surface-card p-5 flex flex-col gap-4 h-full">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Gateway Fee Creep</p>
-          <h3 className="text-base font-bold text-white">MDR Deduction Mismatch</h3>
+          <p className="text-[11px] font-semibold uppercase tracking-widest mb-1"
+             style={{ color: 'var(--text-muted)' }}>Gateway Fee Creep</p>
+          <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+            MDR Deduction Mismatch
+          </h3>
         </div>
-        <div className="w-9 h-9 rounded-full bg-amber-500/15 border border-amber-500/20 flex items-center justify-center">
-          <span className="text-base">⚠️</span>
-        </div>
+        <div className="badge badge-warning shrink-0 mt-0.5">Warning</div>
       </div>
 
       <div className="space-y-3">
-        {/* Expected */}
-        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">Expected MDR</span>
-            <span className="text-lg font-bold text-emerald-400 tabular-nums">2.00%</span>
+        {[
+          { label: 'Expected MDR', val: '2.00%', w: '40%', color: 'var(--status-success)' },
+          { label: 'Actual Deducted', val: '2.45%', w: '49%', color: 'var(--status-risk)' },
+        ].map((row) => (
+          <div key={row.label}
+               className="p-3 rounded-lg"
+               style={{ background: 'var(--bg-base)', border: '1px solid var(--border-sub)' }}>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wide"
+                    style={{ color: row.color }}>{row.label}</span>
+              <span className="text-base font-bold tabular-nums"
+                    style={{ color: row.color }}>{row.val}</span>
+            </div>
+            <div className="h-1 rounded-full" style={{ background: 'var(--border)' }}>
+              <motion.div
+                initial={{ width: 0 }}
+                whileInView={{ width: row.w }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.9, ease: 'easeOut' }}
+                className="h-1 rounded-full"
+                style={{ background: row.color }}
+              />
+            </div>
           </div>
-          <div className="h-2 rounded-full bg-emerald-500/20 overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              whileInView={{ width: '40%' }}
-              viewport={{ once: true }}
-              transition={{ duration: 1, delay: 0.3 }}
-              className="h-full rounded-full bg-emerald-500"
-            />
-          </div>
-        </div>
+        ))}
 
-        {/* Actual */}
-        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-xs font-semibold text-red-400 uppercase tracking-wide">Actual Deducted</span>
-            <span className="text-lg font-bold text-red-400 tabular-nums">2.45%</span>
-          </div>
-          <div className="h-2 rounded-full bg-red-500/20 overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              whileInView={{ width: '49%' }}
-              viewport={{ once: true }}
-              transition={{ duration: 1, delay: 0.5 }}
-              className="h-full rounded-full bg-red-500"
-            />
-          </div>
+        <div className="flex items-center justify-between p-2.5 rounded-lg"
+             style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.15)' }}>
+          <span className="text-xs font-semibold" style={{ color: 'var(--status-warning)' }}>
+            Extra Charged
+          </span>
+          <span className="text-sm font-bold tabular-nums"
+                style={{ color: 'var(--status-warning)' }}>+₹128 / txn</span>
         </div>
-
-        {/* Gap callout */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ delay: 0.7 }}
-          className="flex items-center justify-between p-3 rounded-lg bg-amber-500/10 border border-amber-500/20"
-        >
-          <span className="text-xs text-amber-400 font-semibold">Extra Charged</span>
-          <span className="text-base font-bold text-amber-300 tabular-nums">+₹128 / txn</span>
-        </motion.div>
       </div>
     </div>
   );
@@ -176,154 +149,155 @@ function FeeCreepCard() {
 
 // ─── Card 3: Deterministic Engine ─────────────────────────────────────────
 function DeterministicCard() {
-  const [active, setActive] = useState(false);
+  const rows = [
+    { rows: '1,000',    time: '<1ms',  pct: 12 },
+    { rows: '10,000',   time: '<4ms',  pct: 35 },
+    { rows: '50,000',   time: '<12ms', pct: 70 },
+    { rows: '1,00,000', time: '<22ms', pct: 90 },
+  ];
 
   return (
-    <div className="bento-card p-6 flex flex-col gap-5 h-full col-span-1 md:col-span-2 lg:col-span-1">
-      <div className="flex items-center justify-between">
+    <div className="surface-card p-5 flex flex-col gap-4 h-full">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Deterministic Engine</p>
-          <h3 className="text-base font-bold text-white">O(N) Hash Map Execution</h3>
+          <p className="text-[11px] font-semibold uppercase tracking-widest mb-1"
+             style={{ color: 'var(--text-muted)' }}>Deterministic Engine</p>
+          <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+            O(N) Hash Map Execution
+          </h3>
         </div>
-        <div className="w-9 h-9 rounded-full bg-[#38bdf8]/15 border border-[#38bdf8]/20 flex items-center justify-center">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M3 4H13M3 8H9M3 12H11" stroke="#38bdf8" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </div>
+        <div className="badge badge-success shrink-0 mt-0.5">Verified</div>
       </div>
 
-      <div className="space-y-3">
-        {[
-          { rows: '1,000', time: '< 1ms', pct: 12 },
-          { rows: '10,000', time: '< 4ms', pct: 35 },
-          { rows: '50,000', time: '< 12ms', pct: 70 },
-          { rows: '1,00,000', time: '< 22ms', pct: 90 },
-        ].map((item, i) => (
+      <div className="space-y-2.5">
+        {rows.map((r, i) => (
           <div key={i} className="flex items-center gap-3">
-            <span className="text-xs text-slate-500 font-mono w-20 shrink-0">{item.rows}</span>
-            <div className="flex-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+            <span className="text-[11px] font-mono w-18 shrink-0"
+                  style={{ color: 'var(--text-muted)', width: 72 }}>{r.rows}</span>
+            <div className="flex-1 h-1 rounded-full" style={{ background: 'var(--border)' }}>
               <motion.div
                 initial={{ width: 0 }}
-                whileInView={{ width: `${item.pct}%` }}
+                whileInView={{ width: `${r.pct}%` }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.8, delay: i * 0.1 + 0.3, ease: 'easeOut' }}
-                className="h-full rounded-full"
-                style={{
-                  background: 'linear-gradient(90deg, #38bdf8, #2563eb)',
-                  boxShadow: '0 0 8px rgba(56,189,248,0.5)',
-                }}
+                transition={{ duration: 0.8, delay: i * 0.08, ease: 'easeOut' }}
+                className="h-1 rounded-full"
+                style={{ background: 'var(--accent)' }}
               />
             </div>
-            <span className="text-xs text-[#38bdf8] font-mono font-semibold w-14 text-right">{item.time}</span>
+            <span className="text-[11px] font-mono font-semibold shrink-0"
+                  style={{ color: 'var(--accent)', width: 36, textAlign: 'right' }}>
+              {r.time}
+            </span>
           </div>
         ))}
       </div>
 
-      <div className="mt-auto pt-3 border-t border-white/[0.06]">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[#38bdf8] shadow-[0_0_8px_#38bdf8]" />
-          <span className="text-xs text-slate-400 font-medium">
-            50,000 records reconciled in <span className="text-[#38bdf8] font-bold">{'<'}12ms</span>
-          </span>
-        </div>
+      <div className="mt-auto pt-3 flex items-center gap-2"
+           style={{ borderTop: '1px solid var(--border-sub)' }}>
+        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              style={{ background: 'var(--status-success)' }} />
+        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+          50,000 records reconciled in{' '}
+          <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>&lt;12ms</span>
+        </span>
       </div>
     </div>
   );
 }
 
-// ─── Card 4: Responsible AI ───────────────────────────────────────────────
+// ─── Card 4: AI Translation ───────────────────────────────────────────────
 function AITranslationCard() {
-  const [expanded, setExpanded] = useState(false);
-
   return (
-    <div className="bento-card p-6 flex flex-col gap-5 h-full">
-      <div className="flex items-center justify-between">
+    <div className="surface-card p-5 flex flex-col gap-4 h-full">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Responsible AI</p>
-          <h3 className="text-base font-bold text-white">Plain-English Insight Layer</h3>
+          <p className="text-[11px] font-semibold uppercase tracking-widest mb-1"
+             style={{ color: 'var(--text-muted)' }}>Responsible AI</p>
+          <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+            Plain-English Insight Layer
+          </h3>
         </div>
-        <div className="w-9 h-9 rounded-full bg-[#a855f7]/15 border border-[#a855f7]/20 flex items-center justify-center">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M8 2L9.5 6H14L10.5 8.5L12 12.5L8 10L4 12.5L5.5 8.5L2 6H6.5L8 2Z" stroke="#a855f7" strokeWidth="1.2" strokeLinejoin="round"/>
-          </svg>
-        </div>
+        <div className="badge badge-neutral shrink-0 mt-0.5">Optional</div>
       </div>
 
-      {/* Raw JSON log */}
-      <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3 font-mono text-[10px] text-slate-600 leading-relaxed overflow-hidden">
-        <span className="text-slate-500">{'{'}</span><br/>
-        &nbsp;&nbsp;<span className="text-[#38bdf8]">"order_id"</span>: <span className="text-amber-400">"ORD-88135"</span>,<br/>
-        &nbsp;&nbsp;<span className="text-[#38bdf8]">"status"</span>: <span className="text-red-400">"SETTLEMENT_GAP"</span>,<br/>
-        &nbsp;&nbsp;<span className="text-[#38bdf8]">"delta_inr"</span>: <span className="text-red-400">-128.00</span>,<br/>
-        &nbsp;&nbsp;<span className="text-[#38bdf8]">"mdr_applied"</span>: <span className="text-amber-400">0.0245</span><br/>
-        <span className="text-slate-500">{'}'}</span>
+      {/* JSON log */}
+      <div className="rounded-lg p-3 font-mono text-[10px] leading-relaxed"
+           style={{ background: 'var(--bg-base)', border: '1px solid var(--border-sub)',
+                    color: 'var(--text-muted)' }}>
+        <span>{'{'}</span><br/>
+        &nbsp;&nbsp;<span style={{ color: '#6366F1' }}>"order_id"</span>:{' '}
+        <span style={{ color: '#FBBF24' }}>"ORD-88135"</span>,<br/>
+        &nbsp;&nbsp;<span style={{ color: '#6366F1' }}>"status"</span>:{' '}
+        <span style={{ color: '#F87171' }}>"SETTLEMENT_GAP"</span>,<br/>
+        &nbsp;&nbsp;<span style={{ color: '#6366F1' }}>"delta_inr"</span>:{' '}
+        <span style={{ color: '#F87171' }}>-128.00</span>,<br/>
+        &nbsp;&nbsp;<span style={{ color: '#6366F1' }}>"mdr_applied"</span>:{' '}
+        <span style={{ color: '#FBBF24' }}>0.0245</span><br/>
+        <span>{'}'}</span>
       </div>
 
-      {/* AI translation */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ delay: 0.4 }}
-        className="p-3.5 rounded-xl bg-[#a855f7]/10 border border-[#a855f7]/20"
-      >
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] font-bold text-[#a855f7] tracking-widest uppercase">Gemini AI</span>
-          <div className="h-px flex-1 bg-[#a855f7]/20" />
-        </div>
-        <p className="text-xs text-slate-300 leading-relaxed">
-          <span className="font-semibold text-white">Order ORD-88135</span> was charged ₹128 more in gateway MDR than your agreed rate. The gateway applied <span className="text-amber-300">2.45%</span> instead of <span className="text-emerald-400">2.00%</span>. Raise a dispute ticket with your payment gateway.
+      {/* AI output */}
+      <div className="rounded-lg p-3"
+           style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent-border)' }}>
+        <p className="text-[10px] font-bold uppercase tracking-widest mb-2"
+           style={{ color: 'var(--accent)' }}>Gemini AI</p>
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Order ORD-88135</span>{' '}
+          was charged ₹128 more in gateway MDR than your agreed rate. The gateway applied{' '}
+          <span style={{ color: 'var(--status-warning)', fontWeight: 600 }}>2.45%</span> instead of{' '}
+          <span style={{ color: 'var(--status-success)', fontWeight: 600 }}>2.00%</span>.
+          Raise a dispute ticket with your payment gateway.
         </p>
-      </motion.div>
+      </div>
     </div>
   );
 }
 
-// ─── Main BentoGrid ───────────────────────────────────────────────────────
+// ─── BentoGrid ────────────────────────────────────────────────────────────
 export default function BentoGrid() {
   return (
-    <section className="relative py-24 bg-[#030712] overflow-hidden" id="features">
-      {/* Background accent */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
-      </div>
+    <section
+      id="features"
+      className="relative py-20"
+      style={{ background: 'var(--bg-base)' }}
+    >
+      <div className="section-divider mb-20" />
 
       <div className="max-w-6xl mx-auto px-6">
-        {/* Section header */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.2 }}
           transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-          className="text-center mb-16"
+          className="mb-12"
         >
-          <span className="text-xs font-semibold tracking-[0.25em] uppercase text-slate-500 block mb-4">
-            What We Catch
-          </span>
-          <h2 className="text-3xl sm:text-5xl font-bold text-white mb-4">
-            Four failure modes.{' '}
-            <span className="font-serif-italic gradient-text-cyan">Zero tolerance.</span>
+          <p className="eyebrow">What We Catch</p>
+          <h2 className="text-3xl sm:text-4xl font-bold"
+              style={{ color: 'var(--text-primary)' }}>
+            Four failure modes. Zero tolerance.
           </h2>
-          <p className="text-slate-400 max-w-xl mx-auto text-base font-light">
-            Every exception type is detected, classified, and traced back to its exact source — no black boxes.
+          <p className="text-base mt-3 max-w-lg"
+             style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Every exception type is detected, classified, and traced back to its exact
+            source — no black boxes.
           </p>
         </motion.div>
 
-        {/* 2x2 Bento Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {[OrphanedChargesCard, FeeCreepCard, DeterministicCard, AITranslationCard].map((Card, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 40 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.2 }}
-              transition={{ type: 'spring', stiffness: 100, damping: 20, delay: i * 0.1 }}
-              className="h-full"
-            >
-              <Card />
-            </motion.div>
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[OrphanedChargesCard, FeeCreepCard, DeterministicCard, AITranslationCard].map(
+            (Card, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 28 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.15 }}
+                transition={{ type: 'spring', stiffness: 100, damping: 20, delay: i * 0.08 }}
+                className="h-full"
+              >
+                <Card />
+              </motion.div>
+            )
+          )}
         </div>
       </div>
     </section>

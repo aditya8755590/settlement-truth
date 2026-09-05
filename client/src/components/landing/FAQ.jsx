@@ -32,96 +32,99 @@ export default function FAQ() {
   const [openIndex, setOpenIndex] = useState(null);
 
   return (
-    <section className="relative py-24 bg-[#030712] overflow-hidden" id="faq">
-      {/* Subtle ambient */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
-      </div>
+    <section
+      id="faq"
+      className="relative py-20"
+      style={{ background: 'var(--bg-base)' }}
+    >
+      <div className="section-divider mb-20" />
 
-      <div className="max-w-3xl mx-auto px-6">
+      <div className="max-w-2xl mx-auto px-6">
         {/* Header */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-          className="text-center mb-12"
+          className="mb-10"
         >
-          <span className="text-xs font-semibold tracking-[0.25em] uppercase text-slate-500 block mb-4">
-            Common Questions
-          </span>
-          <h2 className="text-3xl sm:text-4xl font-bold text-white">
-            Everything you need to{' '}
-            <span className="font-serif-italic gradient-text-cyan">know</span>
+          <p className="eyebrow">FAQ</p>
+          <h2 className="text-3xl sm:text-4xl font-bold"
+              style={{ color: 'var(--text-primary)' }}>
+            Common questions
           </h2>
         </motion.div>
 
-        {/* Accordion items */}
-        <div className="space-y-3">
-          {FAQS.map((faq, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ type: 'spring', stiffness: 100, damping: 20, delay: i * 0.06 }}
-            >
-              <div
-                className={`
-                  rounded-2xl border transition-all duration-300 overflow-hidden
-                  ${openIndex === i
-                    ? 'bg-white/[0.06] border-white/[0.12]'
-                    : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.05] hover:border-white/[0.1]'
-                  }
-                `}
+        {/* Accordion */}
+        <div className="space-y-2">
+          {FAQS.map((faq, i) => {
+            const isOpen = openIndex === i;
+            return (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ type: 'spring', stiffness: 100, damping: 20, delay: i * 0.05 }}
               >
-                {/* Question */}
-                <button
-                  onClick={() => setOpenIndex(openIndex === i ? null : i)}
-                  className="w-full flex items-center justify-between p-5 text-left"
+                <div
+                  className="rounded-xl overflow-hidden transition-all duration-200"
+                  style={{
+                    background: isOpen ? 'var(--bg-raised)' : 'var(--bg-surface)',
+                    border: `1px solid ${isOpen ? 'var(--border)' : 'var(--border-sub)'}`,
+                  }}
                 >
-                  <span className={`text-sm font-semibold leading-snug pr-4 transition-colors ${
-                    openIndex === i ? 'text-white' : 'text-slate-300'
-                  }`}>
-                    {faq.q}
-                  </span>
-                  <motion.div
-                    animate={{ rotate: openIndex === i ? 45 : 0 }}
-                    transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-                    className={`w-7 h-7 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
-                      openIndex === i
-                        ? 'bg-[#2563eb]/20 border-[#2563eb]/40 text-[#60a5fa]'
-                        : 'border-white/[0.1] text-slate-500'
-                    }`}
+                  {/* Question row */}
+                  <button
+                    onClick={() => setOpenIndex(isOpen ? null : i)}
+                    className="w-full flex items-center justify-between p-4 text-left gap-4"
                   >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M6 2V10M2 6H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </motion.div>
-                </button>
-
-                {/* Answer */}
-                <AnimatePresence initial={false}>
-                  {openIndex === i && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-                      className="overflow-hidden"
+                    <span
+                      className="text-sm font-semibold leading-snug"
+                      style={{ color: isOpen ? 'var(--text-primary)' : 'var(--text-secondary)' }}
                     >
-                      <div className="px-5 pb-5">
-                        <div className="h-px bg-white/[0.06] mb-4" />
-                        <p className="text-sm text-slate-400 leading-relaxed font-light">
-                          {faq.a}
-                        </p>
-                      </div>
+                      {faq.q}
+                    </span>
+                    <motion.div
+                      animate={{ rotate: isOpen ? 45 : 0 }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                      className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 transition-colors"
+                      style={{
+                        background: isOpen ? 'var(--accent-dim)' : 'var(--bg-raised)',
+                        border: `1px solid ${isOpen ? 'var(--accent-border)' : 'var(--border)'}`,
+                        color: isOpen ? 'var(--accent)' : 'var(--text-muted)',
+                      }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M5 1V9M1 5H9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
                     </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          ))}
+                  </button>
+
+                  {/* Answer */}
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-4 pb-4">
+                          <div className="h-px mb-3" style={{ background: 'var(--border)' }} />
+                          <p className="text-sm leading-relaxed"
+                             style={{ color: 'var(--text-secondary)' }}>
+                            {faq.a}
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </section>

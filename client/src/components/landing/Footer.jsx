@@ -9,7 +9,7 @@ export default function Footer({ onLaunchAudit }) {
   const handleDrop = async (e) => {
     e.preventDefault();
     setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) => f.name.endsWith('.csv'));
+    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.csv'));
     if (!files.length) return;
     await processFiles(files);
   };
@@ -23,12 +23,11 @@ export default function Footer({ onLaunchAudit }) {
   const processFiles = async (files) => {
     setUploadStatus('uploading');
     const formData = new FormData();
-    files.forEach((f) => formData.append('files', f));
+    files.forEach(f => formData.append('files', f));
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       if (res.ok) {
         setUploadStatus('done');
-        // Scroll to engine after brief delay
         setTimeout(() => {
           document.getElementById('reconcile-engine')?.scrollIntoView({ behavior: 'smooth' });
         }, 1200);
@@ -39,68 +38,58 @@ export default function Footer({ onLaunchAudit }) {
   };
 
   return (
-    <footer className="relative py-24 overflow-hidden bg-[#030712]">
-      {/* Top separator */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
+    <footer
+      className="relative py-20 overflow-hidden"
+      style={{ background: 'var(--bg-base)', borderTop: '1px solid var(--border-sub)' }}
+    >
+      <div className="max-w-2xl mx-auto px-6 text-center">
 
-      {/* Deep midnight radial glow */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div
-          className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px]"
-          style={{
-            background: 'radial-gradient(ellipse at top, rgba(99,102,241,0.18) 0%, rgba(37,99,235,0.1) 40%, transparent 70%)',
-          }}
-        />
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full h-32 bg-gradient-to-t from-[#030712] to-transparent" />
-      </div>
-
-      <div className="relative z-10 max-w-3xl mx-auto px-6 text-center">
-        {/* CTA Copy */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-        >
-          <span className="text-xs font-semibold tracking-[0.25em] uppercase text-slate-500 block mb-6">
-            Get Started
-          </span>
-          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-4 leading-tight">
-            Ready to eliminate{' '}
-            <span className="font-serif-italic gradient-text-cyan">payment leakage?</span>
-          </h2>
-          <p className="text-slate-400 text-lg mb-10 font-light max-w-xl mx-auto">
-            Drop your raw merchant CSV files below and let the engine do the rest. No signup required.
-          </p>
-        </motion.div>
-
-        {/* Upload Dropzone */}
+        {/* CTA copy */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.15 }}
+          transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+        >
+          <p className="eyebrow">Get Started</p>
+          <h2
+            className="text-4xl sm:text-5xl font-bold mb-4 leading-tight"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Ready to eliminate payment leakage?
+          </h2>
+          <p className="text-base mb-10"
+             style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            Drop your raw merchant CSV files below and let the engine do the rest. No signup required.
+          </p>
+        </motion.div>
+
+        {/* Dropzone */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.12 }}
         >
           <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => uploadStatus !== 'uploading' && fileInputRef.current?.click()}
-            className={`
-              relative rounded-3xl p-10 border-2 border-dashed cursor-pointer transition-all duration-300
-              ${isDragging
-                ? 'border-[#38bdf8]/60 bg-[#38bdf8]/[0.08] scale-[1.02]'
+            className="relative rounded-xl p-10 border-2 border-dashed cursor-pointer transition-all duration-200"
+            style={{
+              borderColor: isDragging
+                ? 'var(--accent)'
                 : uploadStatus === 'done'
-                ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
-                : 'border-white/[0.1] bg-white/[0.02] hover:border-[#38bdf8]/30 hover:bg-white/[0.04]'
-              }
-            `}
+                ? 'var(--status-success)'
+                : 'var(--border)',
+              background: isDragging
+                ? 'var(--accent-dim)'
+                : uploadStatus === 'done'
+                ? 'rgba(52,211,153,0.06)'
+                : 'var(--bg-surface)',
+            }}
           >
-            {/* Inner glow on drag */}
-            {isDragging && (
-              <div className="absolute inset-0 rounded-3xl bg-[#38bdf8]/[0.05] pointer-events-none" />
-            )}
-
             <input
               ref={fileInputRef}
               type="file"
@@ -112,74 +101,108 @@ export default function Footer({ onLaunchAudit }) {
 
             {uploadStatus === 'done' ? (
               <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
+                initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="flex flex-col items-center gap-4"
+                className="flex flex-col items-center gap-3"
               >
-                <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                    <path d="M6 14L11 19L22 9" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <div
+                  className="w-14 h-14 rounded-xl flex items-center justify-center"
+                  style={{ background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)' }}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path d="M5 12L10 17L19 8" stroke="#34D399" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </div>
-                <p className="text-lg font-bold text-white">Files uploaded!</p>
-                <p className="text-sm text-slate-400">Scrolling to the reconciliation engine…</p>
+                <p className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                  Files uploaded!
+                </p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Scrolling to the reconciliation engine…
+                </p>
               </motion.div>
             ) : uploadStatus === 'uploading' ? (
-              <div className="flex flex-col items-center gap-4">
+              <div className="flex flex-col items-center gap-3">
                 <motion.div
                   animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-                  className="w-12 h-12 rounded-full border-2 border-[#38bdf8]/30 border-t-[#38bdf8]"
+                  transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}
+                  className="w-10 h-10 rounded-full border-2"
+                  style={{
+                    borderColor: 'var(--border)',
+                    borderTopColor: 'var(--accent)',
+                  }}
                 />
-                <p className="text-sm text-slate-400 font-medium">Processing CSV files…</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Processing CSV files…
+                </p>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-4">
-                <div className={`
-                  w-16 h-16 rounded-full border-2 flex items-center justify-center transition-colors
-                  ${isDragging ? 'border-[#38bdf8]/60 bg-[#38bdf8]/10' : 'border-white/[0.1] bg-white/[0.04]'}
-                `}>
-                  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                    <path d="M14 18V10M10 14L14 10L18 14" stroke={isDragging ? '#38bdf8' : '#64748b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M6 20C4.3 20 3 18.7 3 17C3 15.5 4 14.2 5.4 13.9C5.1 13.3 5 12.7 5 12C5 9.2 7.2 7 10 7C10.9 7 11.8 7.3 12.5 7.7C13.4 6.1 15.1 5 17 5C19.8 5 22 7.2 22 10C22 10.1 22 10.2 22 10.3C23.7 10.8 25 12.3 25 14C25 16.2 23.2 18 21 18" stroke={isDragging ? '#38bdf8' : '#64748b'} strokeWidth="1.5" strokeLinecap="round"/>
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center transition-colors"
+                  style={{
+                    background: isDragging ? 'var(--accent-dim)' : 'var(--bg-raised)',
+                    border: `1px solid ${isDragging ? 'var(--accent-border)' : 'var(--border)'}`,
+                  }}
+                >
+                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                    <path d="M11 14V7M8 10L11 7L14 10"
+                          stroke={isDragging ? '#6366F1' : '#6B7280'}
+                          strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M4 16C2.5 16 2 14.9 2 14C2 12.7 2.9 11.6 4.1 11.3C3.9 10.8 3.8 10.3 3.8 9.8C3.8 7.5 5.7 5.6 8 5.6C8.8 5.6 9.6 5.9 10.2 6.3C11 5 12.5 4 14.2 4C16.8 4 19 6.2 19 8.8V9C20.5 9.5 21.5 10.9 21.5 12.5C21.5 14.4 20 16 18.1 16"
+                          stroke={isDragging ? '#6366F1' : '#6B7280'}
+                          strokeWidth="1.3" strokeLinecap="round"/>
                   </svg>
                 </div>
                 <div>
-                  <p className="text-base font-semibold text-white mb-1">
+                  <p className="text-sm font-semibold mb-1"
+                     style={{ color: 'var(--text-primary)' }}>
                     Drop your CSV files here
                   </p>
-                  <p className="text-sm text-slate-500">
-                    Gateway settlements + order exports · <span className="text-[#38bdf8]">click to browse</span>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Gateway settlements + order exports ·{' '}
+                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                      click to browse
+                    </span>
                   </p>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-600">
-                  <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">Razorpay</span>
-                  <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">PayU</span>
-                  <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">Cashfree</span>
-                  <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06]">Stripe</span>
+                {/* Accepted formats */}
+                <div className="flex items-center gap-1.5">
+                  {['Razorpay', 'PayU', 'Cashfree', 'Stripe'].map(gw => (
+                    <span
+                      key={gw}
+                      className="text-[10px] font-medium px-2 py-0.5 rounded"
+                      style={{
+                        background: 'var(--bg-raised)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      {gw}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
           </div>
         </motion.div>
 
-        {/* CTA Button */}
+        {/* CTA */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.25 }}
-          className="flex items-center justify-center gap-4 mt-8"
+          transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.2 }}
+          className="flex items-center justify-center gap-4 mt-6"
         >
-          <motion.button
+          <button
             onClick={onLaunchAudit}
-            whileHover={{ scale: 1.04, y: -2 }}
-            whileTap={{ scale: 0.97 }}
-            className="glow-btn px-8 py-4 rounded-full text-white font-semibold text-base tracking-wide"
+            className="btn-primary text-base px-7 py-3"
           >
             Launch the Engine →
-          </motion.button>
-          <span className="text-sm text-slate-600">No signup. Instant results.</span>
+          </button>
+          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            No signup. Instant results.
+          </span>
         </motion.div>
 
         {/* Footer nav */}
@@ -187,21 +210,30 @@ export default function Footer({ onLaunchAudit }) {
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          transition={{ delay: 0.4 }}
-          className="mt-16 pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4"
+          transition={{ delay: 0.3 }}
+          className="mt-14 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4"
+          style={{ borderTop: '1px solid var(--border-sub)' }}
         >
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#38bdf8] to-[#2563eb] flex items-center justify-center">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <path d="M1 7L3.5 4L6 6L9 2" stroke="#030712" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <div
+              className="w-5 h-5 rounded-md flex items-center justify-center"
+              style={{ background: 'var(--accent)' }}
+            >
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                <path d="M1 6L3 3.5L5.5 5.5L8 2" stroke="#fff" strokeWidth="1.4"
+                      strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
-            <span className="text-sm font-bold text-slate-400">SettlementTruth</span>
+            <span className="text-sm font-bold" style={{ color: 'var(--text-secondary)' }}>
+              SettlementTruth
+            </span>
           </div>
-          <p className="text-xs text-slate-600">
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             Deterministic · Auditable · Zero hallucination · Built for Indian merchants
           </p>
-          <p className="text-xs text-slate-700">© 2026 Settlement Truth</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
+            © 2026 Settlement Truth
+          </p>
         </motion.div>
       </div>
     </footer>

@@ -150,46 +150,55 @@ export default function App() {
       {/* ─────────────────────────────────────────────────────────────────
           SECTION 2 — Reconciliation Engine (anchor target for "Launch Audit")
       ───────────────────────────────────────────────────────────────── */}
-      <section id="reconcile-engine" className="relative bg-[#040914]">
-        {/* Section separator glow */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#38bdf8]/20 to-transparent" />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-24 bg-[#2563eb]/[0.08] blur-3xl" />
+      <section id="reconcile-engine" className="relative" style={{ background: 'var(--bg-base)' }}>
+        {/* Section separator */}
+        <div style={{ height: 1, background: 'var(--border-sub)' }} />
 
-        <div className="relative z-10 max-w-7xl mx-auto px-6 pt-16 pb-20">
+        <div className="relative z-10 max-w-7xl mx-auto px-6 pt-12 pb-20">
 
           {/* Engine Command Header */}
-          <header className="flex items-center justify-between p-5 bg-gradient-to-r from-[#0d1424] to-[#040914] border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] mb-8 relative overflow-hidden">
-            {/* Subtle glow */}
-            <div className="absolute top-0 left-1/4 w-96 h-full bg-[#38bdf8]/[0.06] blur-3xl pointer-events-none" />
-
-            <div className="flex items-center gap-5 relative z-10">
-              <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#38bdf8] to-[#2563eb] flex items-center justify-center shadow-[0_0_20px_rgba(56,189,248,0.4)]">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <path d="M3 13L7 8L11 11L15 5" stroke="#030712" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+          <header
+            className="flex items-center justify-between p-4 rounded-xl mb-8"
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: 'var(--accent)' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                  <path d="M2 11L6 6.5L9.5 9.5L13 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
               <div>
-                <h2 className="text-xl tracking-tight text-white m-0 leading-tight font-bold">
-                  Reconciliation Engine{' '}
-                  <span className="font-serif italic font-light text-[#38bdf8] text-lg">live</span>
+                <h2 className="text-base font-bold m-0 leading-tight"
+                    style={{ color: 'var(--text-primary)' }}>
+                  Reconciliation Engine
+                  <span className="ml-2 badge badge-success">live</span>
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5 tracking-wide uppercase">
-                  {isCustomDataset ? "Custom Dataset Active" : "Synthetic Demo Data Active"}
+                <p className="text-xs mt-0.5"
+                   style={{ color: 'var(--text-muted)' }}>
+                  {isCustomDataset ? 'Custom Dataset Active' : 'Synthetic Demo Data Active'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 relative z-10">
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleReset}
                 disabled={isResetting}
-                className="px-5 py-2.5 text-sm font-semibold text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all border border-white/10 backdrop-blur-md"
+                className="btn-secondary text-sm px-4 py-2"
               >
-                {isResetting ? "Resetting..." : "Reset Data"}
+                {isResetting ? 'Resetting…' : 'Reset Data'}
               </button>
 
-              <label className="cursor-pointer px-5 py-2.5 bg-white/5 hover:bg-white/10 text-slate-200 text-sm font-semibold rounded-full border border-white/10 backdrop-blur-md transition-all flex items-center gap-2">
-                <span>{isCustomDataset ? "Upload More CSVs" : "Upload Custom CSVs"}</span>
+              <label
+                className="btn-secondary text-sm px-4 py-2 cursor-pointer flex items-center gap-2"
+              >
+                <span>{isCustomDataset ? 'Upload More CSVs' : 'Upload Custom CSVs'}</span>
                 <input
                   type="file"
                   multiple
@@ -199,9 +208,9 @@ export default function App() {
                     const files = Array.from(e.target.files);
                     if (!files.length) return;
                     const formData = new FormData();
-                    files.forEach((f) => formData.append("files", f));
+                    files.forEach((f) => formData.append('files', f));
                     try {
-                      const res = await fetch("/api/upload", { method: "POST", body: formData });
+                      const res = await fetch('/api/upload', { method: 'POST', body: formData });
                       if (res.ok) {
                         const data = await res.json();
                         handleUploadSuccess(data.sources);
@@ -216,15 +225,10 @@ export default function App() {
               <button
                 onClick={handleRunReconciliation}
                 disabled={isReconciling || hasRun}
-                className="px-8 py-2.5 bg-white hover:bg-slate-100 disabled:bg-white/20 disabled:text-white/50 text-[#040914] text-sm font-bold rounded-full transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)] flex items-center gap-2 tracking-wide"
+                className="btn-primary text-sm px-5 py-2"
+                style={isReconciling || hasRun ? { opacity: 0.45, cursor: 'not-allowed' } : {}}
               >
-                {isReconciling ? (
-                  <span className="animate-pulse">Reconciling...</span>
-                ) : hasRun ? (
-                  "Engine Complete ✓"
-                ) : (
-                  "Start Reconciliation"
-                )}
+                {isReconciling ? 'Reconciling…' : hasRun ? 'Engine Complete ✓' : 'Start Reconciliation'}
               </button>
             </div>
           </header>

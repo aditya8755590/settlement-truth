@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  Cell, CartesianGrid
+  BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, Cell, CartesianGrid,
 } from 'recharts';
 
 const TABS = ['Reconciliation Flow', 'Breakpoints', 'Gateway Leakages'];
@@ -16,72 +16,60 @@ const CHART_DATA = [
   { month: 'Aug', cleared: 94, discrepancy: 13.3, peak: true },
   { month: 'Sep', cleared: 89, discrepancy: 9.1 },
 ];
-
 const BREAKPOINT_DATA = [
-  { month: 'Mar', val: 12, type: 'Orphan' },
-  { month: 'Apr', val: 28, type: 'Orphan' },
-  { month: 'May', val: 19, type: 'Fee' },
-  { month: 'Jun', val: 45, type: 'Orphan' },
-  { month: 'Jul', val: 33, type: 'Fee' },
-  { month: 'Aug', val: 62, type: 'Orphan', peak: true },
-  { month: 'Sep', val: 41, type: 'Fee' },
+  { month: 'Mar', val: 12 }, { month: 'Apr', val: 28 }, { month: 'May', val: 19 },
+  { month: 'Jun', val: 45 }, { month: 'Jul', val: 33 },
+  { month: 'Aug', val: 62, peak: true }, { month: 'Sep', val: 41 },
 ];
-
 const LEAKAGE_DATA = [
-  { month: 'Mar', val: 32000 },
-  { month: 'Apr', val: 48000 },
-  { month: 'May', val: 41000 },
-  { month: 'Jun', val: 67000 },
-  { month: 'Jul', val: 55000 },
-  { month: 'Aug', val: 98000, peak: true },
-  { month: 'Sep', val: 72000 },
+  { month: 'Mar', val: 32000 }, { month: 'Apr', val: 48000 }, { month: 'May', val: 41000 },
+  { month: 'Jun', val: 67000 }, { month: 'Jul', val: 55000 },
+  { month: 'Aug', val: 98000, peak: true }, { month: 'Sep', val: 72000 },
 ];
 
-// Custom bar shape with rounded top
-function RoundedBar(props) {
-  const { x, y, width, height, fill } = props;
-  const radius = 6;
+// Flat rounded bar — same geometry, no gradient
+function FlatBar({ x, y, width, height, fill }) {
+  const r = 4;
   if (!height || height < 0) return null;
   return (
     <path
-      d={`M${x},${y + height} L${x},${y + radius} Q${x},${y} ${x + radius},${y} L${x + width - radius},${y} Q${x + width},${y} ${x + width},${y + radius} L${x + width},${y + height} Z`}
+      d={`M${x},${y+height} L${x},${y+r} Q${x},${y} ${x+r},${y} L${x+width-r},${y} Q${x+width},${y} ${x+width},${y+r} L${x+width},${y+height} Z`}
       fill={fill}
     />
   );
 }
 
-// Custom tooltip
-function CustomTooltip({ active, payload, label }) {
+function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="glass-card rounded-xl px-3.5 py-2.5 text-xs font-semibold">
-      <p className="text-slate-400 mb-1">{label}</p>
+    <div className="surface-card-sm px-3 py-2 text-xs font-medium"
+         style={{ color: 'var(--text-secondary)' }}>
+      <p className="mb-1" style={{ color: 'var(--text-muted)', fontSize: 10 }}>{label}</p>
       {payload.map((p, i) => (
-        <p key={i} style={{ color: p.color }}>{p.name}: {p.value}</p>
+        <p key={i} style={{ color: 'var(--text-primary)' }}>{p.value}</p>
       ))}
     </div>
   );
 }
 
-// Floating anomaly badge
+// Anomaly label — flat badge, no rounded-pill glow
 function AnomalyBadge({ data, activeTab }) {
-  const peak = data.find((d) => d.peak);
+  const peak = data.find(d => d.peak);
   if (!peak) return null;
   const val = activeTab === 0
-    ? `${peak.discrepancy}% Discrepancy Caught`
+    ? `${peak.discrepancy}% discrepancy`
     : activeTab === 1
-    ? `${peak.val} Breakpoints`
-    : `₹${(peak.val / 1000).toFixed(0)}K Leaked`;
+    ? `${peak.val} breakpoints`
+    : `₹${(peak.val / 1000).toFixed(0)}K leaked`;
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: -8 }}
+      initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.8, type: 'spring', stiffness: 100 }}
-      className="absolute -top-3 right-[11%] z-20"
+      transition={{ delay: 0.7 }}
+      className="absolute -top-2 right-[10%] z-20"
     >
-      <div className="px-3 py-1.5 rounded-full bg-red-500/20 border border-red-500/40 text-xs font-bold text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)] whitespace-nowrap">
-        ↑ {val}
-      </div>
+      <div className="badge badge-risk">↑ {val}</div>
     </motion.div>
   );
 }
@@ -89,83 +77,74 @@ function AnomalyBadge({ data, activeTab }) {
 export default function AnalyticsDashboard() {
   const [activeTab, setActiveTab] = useState(0);
 
-  const data = activeTab === 0 ? CHART_DATA : activeTab === 1 ? BREAKPOINT_DATA : LEAKAGE_DATA;
+  const data    = activeTab === 0 ? CHART_DATA : activeTab === 1 ? BREAKPOINT_DATA : LEAKAGE_DATA;
   const dataKey = activeTab === 0 ? 'cleared' : 'val';
-  const barColor = activeTab === 0 ? '#60a5fa' : activeTab === 1 ? '#a855f7' : '#34d399';
+  // One bar color per tab — all from token set
+  const barNormal = activeTab === 0 ? '#6366F1' : activeTab === 1 ? '#6366F1' : '#34D399';
 
   return (
-    <section className="relative py-24 bg-[#030712] overflow-hidden" id="analytics">
-      {/* Background */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[400px] bg-[#1d4ed8]/[0.07] blur-[100px] rounded-full" />
-      </div>
+    <section
+      id="analytics"
+      className="relative py-20"
+      style={{ background: 'var(--bg-base)' }}
+    >
+      <div className="section-divider mb-20" />
 
       <div className="max-w-6xl mx-auto px-6">
-        {/* Section header */}
+        {/* Header */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.2 }}
           transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-          className="text-center mb-12"
+          className="mb-10"
         >
-          <span className="text-xs font-semibold tracking-[0.25em] uppercase text-slate-500 block mb-4">
-            Interactive Analytics
-          </span>
-          <h2 className="text-3xl sm:text-5xl font-bold text-white mb-4">
-            See inside every{' '}
-            <span className="font-serif-italic gradient-text-blue">payment cycle</span>
+          <p className="eyebrow">Analytics</p>
+          <h2 className="text-3xl sm:text-4xl font-bold"
+              style={{ color: 'var(--text-primary)' }}>
+            See inside every payment cycle
           </h2>
         </motion.div>
 
-        {/* Main Dashboard Card */}
+        {/* Dashboard card — flat surface, no gradient fill, no blueprint grid */}
         <motion.div
-          initial={{ opacity: 0, y: 40 }}
+          initial={{ opacity: 0, y: 28 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.15 }}
-          className="rounded-3xl overflow-hidden border border-[#1e40af]/30"
-          style={{
-            background: 'linear-gradient(145deg, #0f1f4a 0%, #0d1b3e 40%, #0a1530 100%)',
-            boxShadow: '0 32px 80px rgba(0,0,0,0.6), 0 0 80px rgba(37,99,235,0.1)',
-          }}
+          viewport={{ once: true, amount: 0.15 }}
+          transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.12 }}
+          className="surface-card overflow-hidden"
+          style={{ borderRadius: 16 }}
         >
-          {/* Blueprint grid overlay */}
-          <div className="blueprint-grid absolute inset-0 rounded-3xl opacity-40 pointer-events-none" />
-
-          <div className="relative z-10 p-6 sm:p-8">
-            {/* Top row: Stats + Tabs */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-              {/* Key metric */}
+          <div className="p-6 sm:p-8">
+            {/* Top row */}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+              {/* Key stat */}
               <div>
-                <p className="text-xs text-blue-300/60 uppercase tracking-widest font-semibold mb-1">
-                  Total Cleared
-                </p>
-                <div className="flex items-end gap-3">
-                  <span className="text-4xl font-bold text-white tabular-nums">₹895.6M</span>
-                  <span className="text-sm text-emerald-400 font-semibold mb-1.5 flex items-center gap-1">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M6 9V3M3 6L6 3L9 6" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <p className="eyebrow">Total Cleared</p>
+                <div className="flex items-end gap-2.5">
+                  <span className="text-4xl font-bold tabular-nums"
+                        style={{ color: 'var(--text-primary)' }}>₹895.6M</span>
+                  <span className="text-sm font-semibold mb-1 flex items-center gap-1"
+                        style={{ color: 'var(--status-success)' }}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path d="M5 8V2M2 5L5 2L8 5" stroke="currentColor" strokeWidth="1.5"
+                            strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                     12.4%
                   </span>
                 </div>
-                <p className="text-xs text-blue-300/40 mt-1">vs. previous 6-month cycle</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  vs. previous 6-month cycle
+                </p>
               </div>
 
-              {/* Tab switcher */}
-              <div className="flex items-center gap-1 p-1 rounded-full bg-black/20 border border-white/[0.06]">
+              {/* Tab switcher — using consistent tab-group class */}
+              <div className="tab-group">
                 {TABS.map((tab, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveTab(i)}
-                    className={`
-                      px-4 py-2 rounded-full text-xs font-semibold transition-all duration-300
-                      ${activeTab === i
-                        ? 'bg-[#2563eb] text-white shadow-[0_0_20px_rgba(37,99,235,0.5)]'
-                        : 'text-blue-300/50 hover:text-blue-300/80'
-                      }
-                    `}
+                    className={`tab-btn ${activeTab === i ? 'active' : ''}`}
                   >
                     {tab}
                   </button>
@@ -173,86 +152,58 @@ export default function AnalyticsDashboard() {
               </div>
             </div>
 
-            {/* Circular gauge row */}
-            <div className="flex flex-wrap gap-6 mb-8">
+            {/* Status row — circular mini gauges → flat stat rows */}
+            <div className="flex flex-wrap gap-6 mb-8 pb-6"
+                 style={{ borderBottom: '1px solid var(--border-sub)' }}>
               {[
-                { label: 'Matched', value: '97.4%', color: '#34d399', angle: 350 },
-                { label: 'Exceptions', value: '2.1%', color: '#f59e0b', angle: 45 },
-                { label: 'Pending', value: '0.5%', color: '#a855f7', angle: 18 },
-              ].map((stat, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="relative w-10 h-10">
-                    <svg width="40" height="40" viewBox="0 0 40 40">
-                      <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3"/>
-                      <motion.circle
-                        cx="20" cy="20" r="16" fill="none"
-                        stroke={stat.color} strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeDasharray={`${(stat.angle / 360) * 100} 100`}
-                        pathLength="100"
-                        initial={{ strokeDasharray: '0 100' }}
-                        whileInView={{ strokeDasharray: `${(stat.angle / 360) * 100} 100` }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 1, delay: i * 0.2 + 0.5 }}
-                        style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', filter: `drop-shadow(0 0 4px ${stat.color})` }}
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-base font-bold text-white tabular-nums" style={{ color: stat.color }}>{stat.value}</p>
-                    <p className="text-[10px] text-blue-300/50 font-medium">{stat.label}</p>
-                  </div>
+                { label: 'Matched',    value: '97.4%', color: 'var(--status-success)' },
+                { label: 'Exceptions', value: '2.1%',  color: 'var(--status-risk)' },
+                { label: 'Pending',    value: '0.5%',  color: 'var(--status-warning)' },
+              ].map(stat => (
+                <div key={stat.label} className="flex items-center gap-2.5">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0"
+                       style={{ background: stat.color }} />
+                  <span className="text-base font-bold tabular-nums"
+                        style={{ color: stat.color }}>{stat.value}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {stat.label}
+                  </span>
                 </div>
               ))}
             </div>
 
-            {/* Chart area */}
-            <div className="relative h-56">
+            {/* Chart */}
+            <div className="relative h-52">
               <AnomalyBadge data={data} activeTab={activeTab} />
               <AnimatePresence mode="wait">
                 <motion.div
                   key={activeTab}
-                  initial={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.3 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25 }}
                   className="h-full"
                 >
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data} barSize={28} margin={{ top: 20, right: 0, bottom: 0, left: -20 }}>
-                      <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.04)" />
+                    <BarChart data={data} barSize={26} margin={{ top: 16, right: 0, bottom: 0, left: -24 }}>
+                      <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.03)" />
                       <XAxis
-                        dataKey="month"
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: 'rgba(147,197,253,0.4)', fontSize: 11, fontFamily: 'Plus Jakarta Sans' }}
+                        dataKey="month" axisLine={false} tickLine={false}
+                        tick={{ fill: '#6B7280', fontSize: 11, fontFamily: 'Plus Jakarta Sans' }}
                       />
                       <YAxis
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: 'rgba(147,197,253,0.4)', fontSize: 10, fontFamily: 'Plus Jakarta Sans' }}
+                        axisLine={false} tickLine={false}
+                        tick={{ fill: '#6B7280', fontSize: 10, fontFamily: 'Plus Jakarta Sans' }}
                       />
-                      <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)', radius: 6 }} />
-                      <Bar dataKey={dataKey} shape={<RoundedBar />} radius={[6, 6, 0, 0]}>
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.02)', radius: 4 }} />
+                      <Bar dataKey={dataKey} shape={<FlatBar />}>
                         {data.map((entry, index) => (
                           <Cell
                             key={index}
-                            fill={entry.peak
-                              ? `url(#peakGradient-${activeTab})`
-                              : `url(#barGradient-${activeTab})`
-                            }
+                            fill={entry.peak ? '#F87171' : barNormal}
+                            fillOpacity={entry.peak ? 0.9 : 0.7}
                           />
                         ))}
-                        <defs>
-                          <linearGradient id={`barGradient-${activeTab}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={barColor} stopOpacity={0.8} />
-                            <stop offset="100%" stopColor={barColor} stopOpacity={0.2} />
-                          </linearGradient>
-                          <linearGradient id={`peakGradient-${activeTab}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#ef4444" stopOpacity={1} />
-                            <stop offset="100%" stopColor="#dc2626" stopOpacity={0.4} />
-                          </linearGradient>
-                        </defs>
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>

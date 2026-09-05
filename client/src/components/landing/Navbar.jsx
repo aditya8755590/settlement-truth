@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, useScroll } from 'framer-motion';
 
 const NAV_LINKS = [
   { label: 'How It Works', href: '#how-it-works' },
-  { label: 'Features', href: '#features' },
-  { label: 'Analytics', href: '#analytics' },
-  { label: 'FAQ', href: '#faq' },
+  { label: 'Features',     href: '#features' },
+  { label: 'Analytics',    href: '#analytics' },
+  { label: 'FAQ',          href: '#faq' },
 ];
 
 export default function Navbar({ onLaunchAudit }) {
@@ -13,46 +13,51 @@ export default function Navbar({ onLaunchAudit }) {
   const { scrollY } = useScroll();
 
   useEffect(() => {
-    const unsub = scrollY.on('change', (v) => setScrolled(v > 40));
+    const unsub = scrollY.on('change', (v) => setScrolled(v > 48));
     return unsub;
   }, [scrollY]);
 
   return (
     <motion.nav
-      initial={{ y: -80, opacity: 0 }}
+      initial={{ y: -72, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ type: 'spring', stiffness: 100, damping: 20, delay: 0.1 }}
-      className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-5xl"
+      transition={{ type: 'spring', stiffness: 120, damping: 22, delay: 0.1 }}
+      /* z-50 keeps nav above all content; top-3 + w-calc gives floating effect */
+      className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-5xl"
     >
       <div
         className={`
-          glass-pill rounded-full px-5 py-3 flex items-center justify-between
-          transition-all duration-500
-          ${scrolled
-            ? 'bg-[rgba(3,7,18,0.85)] border-white/10 shadow-[0_8px_40px_rgba(0,0,0,0.6)]'
-            : 'bg-[rgba(3,7,18,0.5)] border-white/[0.06]'
-          }
+          nav-surface rounded-xl px-5 h-14 flex items-center justify-between
+          transition-shadow duration-300
+          ${scrolled ? 'shadow-[0_4px_24px_rgba(0,0,0,0.5)]' : ''}
         `}
       >
-        {/* Brand Mark */}
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#38bdf8] to-[#2563eb] flex items-center justify-center shadow-[0_0_16px_rgba(56,189,248,0.5)]">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 10L5.5 6L8.5 8.5L12 4" stroke="#030712" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        {/* Brand */}
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-7 h-7 rounded-md flex items-center justify-center"
+            style={{ background: 'var(--accent)' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <path d="M2 9L5 5.5L8 8L11 3.5" stroke="#fff" strokeWidth="1.8"
+                    strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-          <span className="text-white font-bold text-sm tracking-tight">
-            Settlement<span className="text-[#38bdf8]">Truth</span>
+          <span className="text-[var(--text-primary)] font-bold text-sm tracking-tight">
+            Settlement<span style={{ color: 'var(--accent)' }}>Truth</span>
           </span>
         </div>
 
-        {/* Nav Links — hidden on mobile */}
+        {/* Links */}
         <div className="hidden md:flex items-center gap-1">
           {NAV_LINKS.map((link) => (
             <a
               key={link.href}
               href={link.href}
-              className="px-4 py-2 text-sm text-slate-400 hover:text-white rounded-full hover:bg-white/[0.06] transition-all duration-200 font-medium"
+              className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors duration-150"
+              style={{ color: 'var(--text-muted)' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
             >
               {link.label}
             </a>
@@ -60,14 +65,12 @@ export default function Navbar({ onLaunchAudit }) {
         </div>
 
         {/* CTA */}
-        <motion.button
+        <button
           onClick={onLaunchAudit}
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.97 }}
-          className="glow-btn px-5 py-2 rounded-full text-white text-sm font-semibold tracking-wide"
+          className="btn-primary text-sm px-5 py-2"
         >
           Launch Audit
-        </motion.button>
+        </button>
       </div>
     </motion.nav>
   );
