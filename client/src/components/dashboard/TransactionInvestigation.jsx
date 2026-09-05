@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ArrowDown, Check, X, AlertTriangle } from 'lucide-react';
 
 function formatINR(value) {
@@ -9,8 +9,12 @@ function formatINR(value) {
   }).format(value);
 }
 
-export default function TransactionInvestigation({ record, onClose }) {
+export default function TransactionInvestigation({ record, onClose, onCreateCase, createdCases = [] }) {
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState(null);
   if (!record) return null;
+
+  const alreadyCreated = createdCases.some((c) => c.orderId === record.id);
 
   const passes = record.passes || {};
   const amt = formatINR(record.amount || 0);
@@ -145,9 +149,30 @@ export default function TransactionInvestigation({ record, onClose }) {
       </div>
 
       {/* Footer Actions */}
-      <div className="p-4 border-t border-[var(--border)] bg-[var(--bg-surface)] flex justify-end gap-3 shrink-0">
-        <button onClick={onClose} className="btn-secondary text-xs">Close</button>
-        <button className="btn-primary text-xs">Create Case</button>
+      <div className="p-4 border-t border-[var(--border)] bg-[var(--bg-surface)] flex items-center justify-between gap-3 shrink-0">
+        {createMsg && (
+          <span className="text-xs font-semibold text-[var(--status-success)]">{createMsg}</span>
+        )}
+        <div className="flex justify-end gap-3 ml-auto">
+          <button onClick={onClose} className="btn-secondary text-xs">Close</button>
+          <button
+            onClick={async () => {
+              if (creating || alreadyCreated) return;
+              setCreating(true);
+              const created = await onCreateCase?.(record);
+              setCreating(false);
+              if (created) {
+                setCreateMsg(`Escalated as ${created.id} — no automation will act on this record.`);
+              } else {
+                setCreateMsg('Could not create case. The server may be offline.');
+              }
+            }}
+            disabled={creating || alreadyCreated}
+            className={`text-xs ${alreadyCreated ? 'btn-secondary' : 'btn-primary'}`}
+          >
+            {alreadyCreated ? 'Case Escalated' : creating ? 'Creating…' : 'Create Case'}
+          </button>
+        </div>
       </div>
 
     </div>

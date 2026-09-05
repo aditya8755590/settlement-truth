@@ -16,11 +16,18 @@ db.exec(`
     engineResultsJson TEXT,
     metricsJson TEXT,
     groundTruthJson TEXT,
-    auditTrailJson TEXT
+    auditTrailJson TEXT,
+    casesJson TEXT
   );
 `);
 
 db.pragma('journal_mode = WAL');
+
+// Migration: older DBs predate the cases column
+const sessionCols = db.prepare("PRAGMA table_info(sessions)").all().map((c) => c.name);
+if (!sessionCols.includes("casesJson")) {
+  db.exec("ALTER TABLE sessions ADD COLUMN casesJson TEXT");
+}
 
 // ─── Data Access Helpers ──────────────────────────────────────────────────────
 
@@ -36,7 +43,8 @@ export function createSession(sessionId, isCustom, uploadedAt, uploadMeta, datas
       engineResultsJson = NULL,
       metricsJson = NULL,
       groundTruthJson = NULL,
-      auditTrailJson = NULL
+      auditTrailJson = NULL,
+      casesJson = NULL
   `);
   stmt.run(
     sessionId,
@@ -60,6 +68,7 @@ export function getSession(sessionId) {
     metrics: row.metricsJson ? JSON.parse(row.metricsJson) : null,
     groundTruth: row.groundTruthJson ? JSON.parse(row.groundTruthJson) : null,
     auditTrail: row.auditTrailJson ? JSON.parse(row.auditTrailJson) : null,
+    cases: row.casesJson ? JSON.parse(row.casesJson) : null,
   };
 }
 
@@ -79,6 +88,20 @@ export function saveEngineResults(sessionId, results, metrics, groundTruth, audi
     JSON.stringify(auditTrail),
     sessionId
   );
+}
+
+export function saveCases(sessionId, cases) {
+  const stmt = db.prepare('UPDATE sessions SET casesJson = ? WHERE id = ?');
+  stmt.run(JSON.stringify(cases), sessionId);
+}
+
+export function appendAuditEntry(sessionId, entry) {
+  const session = getSession(sessionId);
+  if (!session) return [];
+  const trail = session.auditTrail || [];
+  const next = [...trail, entry];
+  saveEngineResults(sessionId, session.engineResults, session.metrics, session.groundTruth, next);
+  return next;
 }
 
 export function deleteSession(sessionId) {

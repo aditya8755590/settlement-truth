@@ -3,9 +3,9 @@
  * Source: Razorpay settlement report (T+2 batch)
  *
  * Exceptions embedded:
- * - ORD-88135: No payment was captured → no settlement row for it.
+ * - ORD-88135: Payment captured but never settled → excluded here (missing settlement row).
  * - ORD-88176: Only the partial ₹1,375 capture is settled, not the full ₹2,750.
- * - ORD-88157: Fee deduction is WRONG — extra ₹182 deducted vs rate card.
+ * - ORD-88157: Fee overcharge (extra ₹182) is embedded in the payment fee row already.
  *
  * Settlement batches group multiple payments.
  * Each batch settles on T+2 business days after capture.
@@ -15,10 +15,6 @@ import { payments } from "./payments.js";
 
 // Batch size: group payments into settlement batches of ~10 each
 const BATCH_SIZE = 10;
-
-// Fee overcharge exception: ORD-88157's payment will have an extra ₹182 deducted
-const FEE_OVERCHARGE_ORDERS = new Set(["ORD-88157"]);
-const EXTRA_FEE = 182;
 
 // Orders to EXCLUDE from settlements (missing settlement exceptions)
 // ORD-88135 has no payment so it's already absent; 
@@ -56,17 +52,9 @@ function genSettlements() {
     const paymentIds = [];
 
     for (const p of batch) {
-      let fee = p.fee;
-      let tax = p.tax;
-
-      // Inject fee overcharge for ORD-88157
-      if (FEE_OVERCHARGE_ORDERS.has(p.orderId)) {
-        fee += EXTRA_FEE;
-      }
-
       grossAmount += p.capturedAmount;
-      totalFee += fee;
-      totalTax += tax;
+      totalFee += p.fee;
+      totalTax += p.tax;
       paymentIds.push(p.paymentId);
     }
 

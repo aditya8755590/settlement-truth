@@ -3,9 +3,12 @@
  * Source: Razorpay gateway payment events
  *
  * Rules:
- * - ORD-88135: NO captured payment exists (triggers "Missing settlement" exception later)
+ * - ORD-88135: Payment IS captured (₹4,260) but deliberately EXCLUDED from any
+ *   settlement batch (see settlements.js) → "captured but never settled" case.
  * - ORD-88176: Partial capture — only ₹1,375 captured vs order of ₹2,750
- * - All other orders: full capture at exact order amount
+ * - ORD-88104: Fee creep — gateway charges 4% instead of 2.36%
+ * - ORD-88157: Fee overcharge — extra ₹182 deducted beyond the rate card
+ * - All other orders: full capture at exact order amount, standard fee
  */
 
 import { orders } from "./orders.js";
@@ -14,14 +17,18 @@ const GATEWAY_RATE = 0.0236;      // 2% + 0.36% gateway fee
 const GST_ON_FEE   = 0.18;
 
 // Orders that have NO payment (missing capture — engine will flag as exception)
-const MISSING_CAPTURE = new Set(["ORD-88135"]);
+// NOTE: intentionally empty in the demo build; ORD-88135 uses "captured but never settled".
+const MISSING_CAPTURE = new Set([]);
 
 // Orders with partial capture
 const PARTIAL_CAPTURE = { "ORD-88176": 1375 };
 
 // Edge cases for demo
 const DUPLICATED_PAYMENT = new Set(["ORD-88109"]); // User clicked pay twice
-const FEE_CREEP_ORDER = "ORD-88104"; // Gateway charged 2.2% instead of 2.0%
+const FEE_CREEP_ORDER = "ORD-88104"; // Gateway charged 4% instead of 2.36%
+const FEE_CREEP_RATE = 0.04;
+const FEE_OVERCHARGE_ORDERS = new Set(["ORD-88157"]); // Extra ₹182 deducted
+const EXTRA_FEE = 182;
 
 function genPayments() {
   const payments = [];
@@ -38,10 +45,12 @@ function genPayments() {
 
     let fee = Math.round(capturedAmount * GATEWAY_RATE);
     if (order.orderId === FEE_CREEP_ORDER) {
-      // Fee creep: 2.2% instead of standard 2.0% (GATEWAY_RATE)
-      // Actually GATEWAY_RATE in this file is 0.0236, but the engine expects 0.02 base.
-      // Let's force a larger fee deviation (e.g. 3.0% total).
-      fee = Math.round(capturedAmount * 0.03); 
+      // Fee creep: charge 4% instead of the contracted 2.36% — clear violation
+      fee = Math.round(capturedAmount * FEE_CREEP_RATE);
+    }
+    if (FEE_OVERCHARGE_ORDERS.has(order.orderId)) {
+      // Fee overcharge: flat extra ₹182 deducted beyond the rate card
+      fee += EXTRA_FEE;
     }
 
     const tax = Math.round(fee * GST_ON_FEE);

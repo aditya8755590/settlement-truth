@@ -35,8 +35,9 @@ export default function ExceptionQueue({ records, onSelectCase }) {
     const problem = r.title || r.type || 'Reconciliation exception';
     const evidenceScore = `${passedCount}/${totalPasses} passes`;
     const riskAmt = r.amount || 0;
-    
-    return { severity, badgeClass, problem, evidenceScore, riskAmt };
+    const failedPasses = r.reason || (passedCount < totalPasses ? `${totalPasses - passedCount} evidence pass(es) failed` : '—');
+
+    return { severity, badgeClass, problem, evidenceScore, riskAmt, failedPasses };
   };
 
   return (
@@ -87,14 +88,11 @@ export default function ExceptionQueue({ records, onSelectCase }) {
               <th>Evidence</th>
               <th className="text-right">Money at risk</th>
               <th>Status</th>
-              <th>Age</th>
             </tr>
           </thead>
           <tbody>
             {exceptions.map((r, idx) => {
               const details = getDerivedDetails(r);
-              // Calculate a fake age just for realism (between 1h and 3d)
-              const age = ["2h", "4h", "1d", "2d", "3d"][idx % 5];
               
               return (
                 <tr key={r.id || idx} onClick={() => onSelectCase(r)}>
@@ -102,13 +100,15 @@ export default function ExceptionQueue({ records, onSelectCase }) {
                     <span className={`badge ${details.badgeClass}`}>{details.severity}</span>
                   </td>
                   <td className="font-mono">{r.id}</td>
-                  <td className="font-medium text-[var(--text-primary)]">{details.problem}</td>
+                  <td className="font-medium text-[var(--text-primary)]">
+                    <div>{details.problem}</div>
+                    <div className="text-xs text-[var(--text-muted)] font-normal">{details.failedPasses}</div>
+                  </td>
                   <td className="text-[var(--text-secondary)]">{details.evidenceScore}</td>
                   <td className="text-right tabular-nums font-semibold">{formatINR(details.riskAmt)}</td>
                   <td>
                     <span className="badge badge-warning">Review</span>
                   </td>
-                  <td className="text-[var(--text-secondary)]">{age}</td>
                 </tr>
               );
             })}

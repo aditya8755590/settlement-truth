@@ -15,10 +15,19 @@ const FEE_TOLERANCE_INR = 25;
 const AMOUNT_TOLERANCE_INR = 1;
 
 const KNOWN_EXCEPTIONS = new Set([
-  "ORD-88135", "ORD-88176", "ORD-88184", "ORD-88186", "ORD-88188", "ORD-88189",
-  "ORD-88191", "ORD-88193", "ORD-88194", "ORD-88196", "ORD-88198", "ORD-88199",
-  "ORD-88157", "ORD-88142",
-  "ORD-88104", "ORD-88109", "ORD-88121", "ORD-88162", "ORD-88180", "ORD-88181", "ORD-88182",
+  // Captured but never settled (money at risk)
+  "ORD-88135",
+  "ORD-88184", "ORD-88186", "ORD-88188", "ORD-88189",
+  "ORD-88191", "ORD-88193", "ORD-88194", "ORD-88196",
+  "ORD-88198", "ORD-88199",
+  // Duplicate payment capture
+  "ORD-88109",
+  // Fee discrepancies (creep + overcharge)
+  "ORD-88104", "ORD-88157",
+  // Duplicate refund pair
+  "ORD-88142",
+  // Partial capture
+  "ORD-88176",
 ]);
 
 function groundTruth(orderId) {
@@ -80,7 +89,11 @@ function reconcileOrder(order, idx, gatewayRate, gstRate) {
     amountMatch ? `Captured amount matches order (${formatCurrency(order.amount, order.currency)})` : `❌ Captured ${formatCurrency(payment.capturedAmount, order.currency)} vs order ${formatCurrency(order.amount, order.currency)} — partial capture`
   );
   const p1ok = payment.status === "captured" && amountMatch;
-  if (!p1ok) broken.push("Order–Payment link");
+  if (!amountMatch && payment.status === "captured") {
+    broken.push("Order–Payment link: partial capture");
+  } else if (!p1ok) {
+    broken.push("Order–Payment link");
+  }
 
   const settlement = settlementByPayment.get(payment.paymentId);
   if (!settlement) {
@@ -114,6 +127,7 @@ function reconcileOrder(order, idx, gatewayRate, gstRate) {
     return {
       orderId: order.orderId, status: "Anomaly", exceptionType: "Missing bank credit",
       passes: { p1: p1ok, p2: p2ok, p3: false, p4: false },
+      settlementId: settlement.settlementId,
       timeline: [...timeline, `❌ No bank credit found for settlement ${settlement.settlementId}`],
       action: "Verify with bank. Do not mark cash as received.", evidence: 62,
     };
@@ -148,16 +162,18 @@ function reconcileOrder(order, idx, gatewayRate, gstRate) {
     return {
       orderId: order.orderId, status: "Anomaly", exceptionType: "Possible duplicate refund",
       passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: false },
+      settlementId: settlement.settlementId, bankUtr: bankCredit.utr,
       timeline: [...timeline, `❌ ${refundException}`],
       action: "Freeze automated action. Human must verify refund intent before processing.", evidence: 54,
     };
   }
 
   if (broken.length > 0) {
-    const primaryException = broken.find((b) => b.includes("fee")) ? "Unexpected fee deduction" :
-      broken.find((b) => b.includes("UTR")) ? "Bank reference mismatch" :
-      broken.find((b) => b.includes("partial")) ? "Partial capture requires review" : "Reconciliation exception";
-    return { orderId: order.orderId, status: "Anomaly", exceptionType: primaryException, passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: p4ok }, timeline, action: "Review failed evidence before taking any money action.", evidence: 65 };
+    const primaryException =
+      broken.find((b) => b.includes("partial")) ? "Partial capture requires review" :
+      broken.find((b) => b.includes("fee")) ? "Unexpected fee deduction" :
+      broken.find((b) => b.includes("UTR")) ? "Bank reference mismatch" : "Reconciliation exception";
+    return { orderId: order.orderId, status: "Anomaly", exceptionType: primaryException, passes: { p1: p1ok, p2: p2ok, p3: p3ok, p4: p4ok }, timeline, action: "Review failed evidence before taking any money action.", evidence: 65, settlementId: settlement.settlementId, bankUtr: bankCredit.utr };
   }
 
   const isFeeAdjusted = feeVariance > 0;

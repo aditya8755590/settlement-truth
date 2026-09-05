@@ -8,13 +8,30 @@ function formatINR(value) {
   }).format(value);
 }
 
-export default function CaseManagement() {
-  const cases = [
-    { id: "CASE-ST-1028", order: "ORD-88135", issue: "Payment captured but never settled", risk: 4260, created: "2h ago", owner: "Unassigned", status: "Open" },
-    { id: "CASE-ST-1027", order: "ORD-72041", issue: "Orphaned payment", risk: 3420, created: "1d ago", owner: "Payment Ops", status: "Investigating" },
-    { id: "CASE-ST-1026", order: "ORD-55210", issue: "Fee mismatch", risk: 128, created: "1d ago", owner: "Finance", status: "Escalated" },
-  ];
+function formatCreatedAt(iso) {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return '—';
+  const diff = Date.now() - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
+const badgeFor = (status) => {
+  switch (status) {
+    case 'Open': return 'badge-warning';
+    case 'Investigating': return 'badge-accent';
+    case 'Escalated': return 'badge-risk';
+    case 'Resolved': return 'badge-success';
+    default: return 'badge-accent';
+  }
+};
+
+export default function CaseManagement({ cases = [] }) {
   return (
     <div className="space-y-4">
       <header className="mb-6">
@@ -23,36 +40,41 @@ export default function CaseManagement() {
       </header>
 
       <div className="surface-card overflow-hidden">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Case ID</th>
-              <th>Order</th>
-              <th>Issue</th>
-              <th className="text-right">Money at risk</th>
-              <th>Created</th>
-              <th>Owner</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cases.map((c, i) => (
-              <tr key={i}>
-                <td className="font-mono text-[var(--accent)] font-semibold">{c.id}</td>
-                <td className="font-mono">{c.order}</td>
-                <td className="font-medium text-[var(--text-primary)]">{c.issue}</td>
-                <td className="text-right tabular-nums font-semibold">{formatINR(c.risk)}</td>
-                <td className="text-[var(--text-secondary)]">{c.created}</td>
-                <td className="text-[var(--text-secondary)]">{c.owner}</td>
-                <td>
-                  <span className={`badge ${c.status === 'Open' ? 'badge-warning' : c.status === 'Investigating' ? 'badge-accent' : 'badge-risk'}`}>
-                    {c.status}
-                  </span>
-                </td>
+        {cases.length === 0 ? (
+          <div className="p-10 text-center">
+            <p className="text-sm text-[var(--text-secondary)] mb-2">No cases yet.</p>
+            <p className="text-xs text-[var(--text-muted)]">Open an exception from the Reconciliation Queue and click <span className="font-semibold">Create Case</span> to escalate it for human review.</p>
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Case ID</th>
+                <th>Order</th>
+                <th>Issue</th>
+                <th className="text-right">Money at risk</th>
+                <th>Created</th>
+                <th>Owner</th>
+                <th>Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {cases.map((c, i) => (
+                <tr key={c.id || i}>
+                  <td className="font-mono text-[var(--accent)] font-semibold">{c.id}</td>
+                  <td className="font-mono">{c.orderId}</td>
+                  <td className="font-medium text-[var(--text-primary)]">{c.title}</td>
+                  <td className="text-right tabular-nums font-semibold">{formatINR(c.amountAtRisk)}</td>
+                  <td className="text-[var(--text-secondary)]">{formatCreatedAt(c.createdAt)}</td>
+                  <td className="text-[var(--text-secondary)]">{c.owner || 'Unassigned'}</td>
+                  <td>
+                    <span className={`badge ${badgeFor(c.status)}`}>{c.status}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

@@ -9,7 +9,7 @@ function formatINR(value) {
   }).format(value);
 }
 
-export default function OverviewDashboard({ metrics, records, hasRun, isReconciling }) {
+export default function OverviewDashboard({ metrics, records, hasRun, isReconciling, auditTrail = [] }) {
   
   // Calculate breakdown dynamically from records
   const breakdown = useMemo(() => {
@@ -18,15 +18,18 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
     let capturedUnsettled = 0;
     let duplicatePayments = 0;
     let feeDiscrepancies = 0;
-    let orphanedOrders = 0;
+    let refundDiscrepancies = 0;
+    let partialCaptures = 0;
 
     records.forEach(r => {
       if (r.status !== "Anomaly") return;
       const amt = r.amount || 0;
 
-      const type = (r.type || r.title || '').toLowerCase();
+      const type = (r.title || r.type || '').toLowerCase();
       if (type.includes('duplicate')) duplicatePayments += amt;
       else if (type.includes('fee')) feeDiscrepancies += amt;
+      else if (type.includes('refund')) refundDiscrepancies += amt;
+      else if (type.includes('partial')) partialCaptures += amt;
       else capturedUnsettled += amt; // missing settlement, missing bank credit, etc.
     });
 
@@ -34,7 +37,8 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
       { label: "Captured but unsettled", amount: capturedUnsettled },
       { label: "Duplicate payments", amount: duplicatePayments },
       { label: "Fee discrepancies", amount: feeDiscrepancies },
-      { label: "Orphaned orders", amount: orphanedOrders },
+      { label: "Duplicate refunds", amount: refundDiscrepancies },
+      { label: "Partial captures", amount: partialCaptures },
     ].filter(i => i.amount > 0).sort((a, b) => b.amount - a.amount);
 
   }, [records]);
@@ -67,20 +71,29 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
   const exceptions = metrics?.exceptionQueueCount || 0;
   const moneyAtRisk = metrics?.cashAtRisk || 0;
 
-  // Precision from ground truth
-  const precision = metrics ? `${(parseFloat(metrics.evidencePrecision || '0'))}` : '0';
-  
-  // Health stats — use real reconciliation rate for all (engine runs pass/fail per order not per source)
-  const matched = metrics?.autoMatched || 0;
-  const total = metrics?.totalRecords || 0;
-  const matchRate = total > 0 ? `${((matched / total) * 100).toFixed(1)}%` : '0%';
-  const healthStats = [
-    { label: "Orders", val: matchRate },
-    { label: "Payments", val: matchRate },
-    { label: "Refunds", val: "100%" },
-    { label: "Settlements", val: matchRate },
-    { label: "Bank credits", val: matchRate },
-  ];
+  // Real per-category outcome counts, derived from the latest engine run
+  const outcomes = useMemo(() => {
+    if (!records || records.length === 0) return [];
+    const anomaly = records.filter((r) => r.status === 'Anomaly' || r.status === 'Failed');
+    const byCause = (key) => anomaly.filter((r) => (r.title || r.type || '').toLowerCase().includes(key)).length;
+    return [
+      { label: 'Auto-matched', n: records.length - anomaly.length, pct: records.length ? ((records.length - anomaly.length) / records.length) * 100 : 0, color: 'bg-[var(--status-success)]' },
+      { label: 'Missing settlements', n: byCause('settlement'), pct: records.length ? (byCause('settlement') / records.length) * 100 : 0, color: 'bg-[var(--status-warning)]' },
+      { label: 'Fee deductions', n: byCause('fee'), pct: records.length ? (byCause('fee') / records.length) * 100 : 0, color: 'bg-[var(--status-warning)]' },
+      { label: 'Duplicate evidence', n: byCause('duplicate'), pct: records.length ? (byCause('duplicate') / records.length) * 100 : 0, color: 'bg-[var(--status-risk)]' },
+      { label: 'Partial captures', n: byCause('partial'), pct: records.length ? (byCause('partial') / records.length) * 100 : 0, color: 'bg-[var(--status-risk)]' },
+    ].filter((o) => o.n > 0);
+  }, [records]);
+
+  // Precision / recall from ground-truth comparison
+  const precision = parseFloat(metrics?.evidencePrecision || String(metrics?.groundTruth?.precision ?? 0));
+  const recall = metrics?.groundTruth?.recall ?? 0;
+
+  // Real last-run time, taken from the newest engine audit entry (server-generated)
+  const engineEntry = [...auditTrail].reverse().find((e) => /Pass 1–3|Policy gate/i.test(e.title || ''));
+  const lastRunAt = engineEntry
+    ? new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long' }) + ' · ' + engineEntry.timestamp
+    : 'not run yet';
 
 
   return (
@@ -89,7 +102,7 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
       <header className="mb-8">
         <h2 className="text-2xl font-bold text-[var(--text-primary)]">Audit overview</h2>
         <p className="text-sm text-[var(--text-secondary)]">
-          {metrics?.totalRecords?.toLocaleString()} orders · Last run {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+          {metrics?.totalRecords?.toLocaleString()} orders · Last run {lastRunAt}
         </p>
       </header>
 
@@ -135,7 +148,7 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
             <CheckSquare className="w-5 h-5 text-[var(--text-muted)]" />
           </div>
           <div>
-            <div className="text-3xl font-bold text-[var(--text-primary)]">0</div>
+            <div className="text-3xl font-bold text-[var(--text-primary)]">{metrics?.forcedMatchesCount ?? 0}</div>
             <div className="text-xs text-[var(--text-muted)] mt-1">No financial guesses</div>
           </div>
         </div>
@@ -165,17 +178,20 @@ export default function OverviewDashboard({ metrics, records, hasRun, isReconcil
         {/* Reconciliation health */}
         <div className="surface-card p-6">
           <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1">Reconciliation health</h3>
-          <p className="text-sm text-[var(--text-secondary)] mb-6">Record match rates across sources</p>
+          <p className="text-sm text-[var(--text-secondary)] mb-6">Outcomes from the latest engine run</p>
           
           <div className="space-y-4">
-            {healthStats.map((stat, idx) => (
+            {outcomes.length === 0 && (
+              <p className="text-sm text-[var(--text-muted)] italic">No records to break down.</p>
+            )}
+            {outcomes.map((stat, idx) => (
               <div key={idx}>
                 <div className="flex justify-between text-sm mb-1.5">
                   <span className="font-medium text-[var(--text-primary)]">{stat.label}</span>
-                  <span className="font-semibold text-[var(--text-secondary)]">{stat.val} reconciled</span>
+                  <span className="font-semibold text-[var(--text-secondary)]">{stat.n} records · {stat.pct.toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-[var(--border)] rounded-full h-2">
-                  <div className="bg-[var(--status-success)] h-2 rounded-full" style={{ width: stat.val }}></div>
+                  <div className={`${stat.color} h-2 rounded-full`} style={{ width: `${stat.pct}%` }}></div>
                 </div>
               </div>
             ))}

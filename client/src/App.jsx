@@ -11,6 +11,7 @@ export default function App() {
   const [metrics, setMetrics] = useState(null);
   const [groundTruth, setGroundTruth] = useState(null);
   const [auditTrail, setAuditTrail] = useState([]);
+  const [cases, setCases] = useState([]);
 
   // Process State
   const [hasRun, setHasRun] = useState(false);
@@ -32,7 +33,36 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => setSources(d))
       .catch(() => {});
+    fetch("/api/cases")
+      .then((r) => r.json())
+      .then((d) => setCases(d.cases ?? []))
+      .catch(() => {});
   }, []);
+
+  /**
+   * Escalate a reconciled (or exception) record into a tracked case.
+   * Persists via the API and appends an audit-trail entry server-side.
+   */
+  const createCase = async (record) => {
+    if (!record) return null;
+    try {
+      const res = await fetch("/api/cases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: record.id }),
+      });
+      if (!res.ok) throw new Error("Case creation failed");
+      const data = await res.json();
+
+      // Reflect the new case and appended audit entry without a full reload
+      setCases((prev) => [...prev, data.case]);
+      if (data.auditTrail) setAuditTrail(data.auditTrail);
+      return data.case;
+    } catch (err) {
+      console.error("Create case error:", err);
+      return null;
+    }
+  };
 
   /** Run the reconciliation engine. Always runs fresh. */
   const runReconciliation = async () => {
@@ -126,6 +156,7 @@ export default function App() {
       setMetrics(null);
       setGroundTruth(null);
       setAuditTrail([]);
+      setCases([]);
       setHasRun(false);
       setUploadStatus(null);
       setUploadError(null);
@@ -151,6 +182,8 @@ export default function App() {
           metrics={metrics}
           groundTruth={groundTruth}
           auditTrail={auditTrail}
+          cases={cases}
+          createCase={createCase}
           hasRun={hasRun}
           isReconciling={isReconciling}
           gatewayRate={gatewayRate}

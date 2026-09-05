@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import { runReconciliation } from "./engine.js";
 import { parseCSVStream, buildDataset } from "./csvParser.js";
 import { explainRecord } from "./aiExplainer.js";
-import { createSession, getSession, saveEngineResults, deleteSession } from "./db.js";
+import { createSession, getSession, saveEngineResults, saveCases, appendAuditEntry, deleteSession } from "./db.js";
 import { orders as seedOrders } from "./data/orders.js";
 import { payments as seedPayments } from "./data/payments.js";
 import { refunds as seedRefunds } from "./data/refunds.js";
@@ -189,6 +189,50 @@ app.get("/api/explain/config", (_req, res) => {
     model: process.env.GEMINI_API_KEY ? "gemini-2.0-flash" : "deterministic",
     guardrails: ["AI receives pre-computed facts only", "No math allowed", "No guessing"],
   });
+});
+
+// ─── Cases ────────────────────────────────────────────────────────────────────
+app.get("/api/cases", requireSession, (req, res) => {
+  res.json({ cases: req.sessionData.cases || [] });
+});
+
+app.post("/api/cases", requireSession, (req, res) => {
+  const results = req.sessionData.engineResults || [];
+  const record = results.find((r) => r.id === req.body.orderId);
+  if (!record) {
+    return res.status(404).json({ error: `Record not found. Run reconciliation first.` });
+  }
+
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const existing = req.sessionData.cases || [];
+  const seq = existing.length + 1;
+  const caseId = `CASE-ST-${String(1000 + seq).padStart(4, "0")}`;
+
+  const newCase = {
+    id: caseId,
+    orderId: record.id,
+    title: record.title || record.type || "Reconciliation exception",
+    issue: record.reason || "Evidence pass failed — human review required.",
+    amountAtRisk: record.amount || 0,
+    currency: record.currency || "INR",
+    status: "Open",
+    owner: "Unassigned",
+    createdAt: now.toISOString(),
+    passes: record.passes || {},
+    evidenceScore: record.evidence ?? 0,
+  };
+
+  saveCases(req.sessionId, [...existing, newCase]);
+
+  const auditEntry = {
+    timestamp: ts,
+    title: `Case ${caseId} opened for ${record.id}`,
+    description: `${newCase.title} — ${record.amount == null ? 0 : record.amount} ${newCase.currency} at risk, assigned for human review.`,
+  };
+  const auditTrail = appendAuditEntry(req.sessionId, auditEntry);
+
+  res.json({ success: true, case: newCase, auditTrail });
 });
 
 // ─── Upload (Streaming) ───────────────────────────────────────────────────────

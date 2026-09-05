@@ -18,6 +18,8 @@ export default function AppShell({
   hasRun, 
   isReconciling,
   auditTrail,
+  cases,
+  createCase,
   handleRunReconciliation,
   handleUpload,
   uploadStatus,
@@ -38,7 +40,7 @@ export default function AppShell({
             
             <div className={`flex-1 transition-all ${selectedCase ? 'max-w-3xl' : 'max-w-5xl'}`}>
               {currentView === 'overview' && (
-                <OverviewDashboard metrics={metrics} records={records} hasRun={hasRun} isReconciling={isReconciling} />
+                <OverviewDashboard metrics={metrics} records={records} hasRun={hasRun} isReconciling={isReconciling} auditTrail={auditTrail} />
               )}
 
               {currentView === 'reconciliation' && (
@@ -94,7 +96,7 @@ export default function AppShell({
               )}
               
               {currentView === 'cases' && (
-                <CaseManagement />
+                <CaseManagement cases={cases} />
               )}
               
               {currentView === 'transactions' && (
@@ -175,6 +177,8 @@ export default function AppShell({
                 <TransactionInvestigation 
                   record={selectedCase} 
                   onClose={() => setSelectedCase(null)} 
+                  onCreateCase={createCase}
+                  createdCases={cases}
                 />
               </aside>
             )}

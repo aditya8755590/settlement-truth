@@ -85,7 +85,7 @@ function buildEvidencePayload(record) {
 // structured evidence using pure string templates. Same quality for demos.
 function deterministicFallback(evidence) {
   const { status, exceptionType, exactFailure, evidenceScore,
-          passesPassed, passesFailed, orderAmount, orderId, safeAction } = evidence;
+          passesPassed, passesFailed, orderAmount, orderId, safeAction, currency = "INR" } = evidence;
 
   if (status === "matched") {
     return {
