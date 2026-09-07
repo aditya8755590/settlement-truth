@@ -8,6 +8,7 @@ import { runReconciliation } from "./engine.js";
 import { parseCSVStream, buildDataset } from "./csvParser.js";
 import { explainRecord } from "./aiExplainer.js";
 import { createSession, getSession, saveEngineResults, saveCases, appendAuditEntry, deleteSession } from "./db.js";
+import { validateReconciliationOptions } from "./reconciliationPolicy.js";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -137,11 +138,12 @@ app.post("/api/reconcile", requireSession, async (req, res) => {
   const dataset = req.sessionData.dataset;
   if (!dataset) return res.status(400).json({ error: "No dataset available." });
   
-  // Accept custom rates if passed from frontend (Phase 2 feature)
-  const options = {
-    gatewayRate: req.body.gatewayRate || 0.02,
-    gstRate: req.body.gstRate || 0.18,
-  };
+  let options;
+  try {
+    options = validateReconciliationOptions(req.body ?? {});
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 
   const result = await runReconciliation(dataset, req.sessionData.isCustom, options);
   
@@ -265,6 +267,17 @@ app.post("/api/upload", uploadMiddleware, async (req, res) => {
     if (result.errors.length > 0) {
       allErrors.push(...result.errors.slice(0, 5).map(e => `[${file.originalname}] ${e}`));
     }
+  }
+
+  // A reconciliation dataset is evidence, not a best-effort import. Reject
+  // the whole upload if any source row is malformed so missing records cannot
+  // make downstream metrics look more certain than the input supports.
+  if (allErrors.length > 0) {
+    return res.status(422).json({
+      error: "Upload contains invalid or unrecognized source data. Correct the CSV and retry.",
+      parseResults,
+      errors: allErrors,
+    });
   }
 
   const dataset = buildDataset(parsedTables);

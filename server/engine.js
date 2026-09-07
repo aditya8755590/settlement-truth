@@ -13,7 +13,6 @@ const AMOUNT_TOLERANCE_INR = 1;
 // Documented capture-to-settlement fee policy. The reconciliation rate is
 // configurable (UI → Rules); this is the default when none is supplied.
 const GATEWAY_RATE = 0.02;
-const GST_ON_FEE = 0.18;
 
 function amountTolerance(currency) {
   return currency === "USD" ? 0.05 : AMOUNT_TOLERANCE_INR;
@@ -443,7 +442,7 @@ function orphanBankRecord(c, idx) {
 }
 
 export async function runReconciliation(dataset, isCustom, options = {}) {
-  const { gatewayRate = GATEWAY_RATE, gstRate = GST_ON_FEE } = options;
+  const { gatewayRate = GATEWAY_RATE } = options;
   const currency = dataset.orders[0]?.currency || "USD";
   const idx = buildIndices(dataset);
 

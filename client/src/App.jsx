@@ -22,7 +22,6 @@ export default function App() {
 
   // Settings
   const [gatewayRate, setGatewayRate] = useState(2);
-  const [gstRate, setGstRate] = useState(18);
 
   // Prevent concurrent runs
   const isReconcilingRef = useRef(false);
@@ -81,7 +80,6 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gatewayRate: parseFloat(gatewayRate) / 100,
-          gstRate: parseFloat(gstRate) / 100,
         }),
       });
 
@@ -188,8 +186,6 @@ export default function App() {
           isReconciling={isReconciling}
           gatewayRate={gatewayRate}
           setGatewayRate={setGatewayRate}
-          gstRate={gstRate}
-          setGstRate={setGstRate}
           handleRunReconciliation={handleRunReconciliation}
           handleReset={handleReset}
           isResetting={isResetting}
