@@ -27,6 +27,7 @@ test("does not auto-match a settlement to a payment using only a date heuristic"
   const dataset = buildDataset({
     orders: { rows: [{ orderId: "ORD-1", amount: 100, currency: "INR", createdAt: "2026-09-01T00:00:00.000Z" }] },
     payments: { rows: [{ paymentId: "PAY-1", orderId: "ORD-1", capturedAmount: 100, status: "captured", capturedAt: "2026-09-01T00:00:00.000Z" }] },
+    refunds: { rows: [] },
     settlements: { rows: [{ settlementId: "SET-1", netAmount: 98, settlementDate: "2026-09-03T00:00:00.000Z" }] },
     bankCredits: { rows: [{ reference: "SET-1", amount: 98 }] },
   });

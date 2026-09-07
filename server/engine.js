@@ -1,554 +1,219 @@
 export function formatCurrency(value, currencyCode = "INR") {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: currencyCode,
-    maximumFractionDigits: 0,
-  }).format(value);
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: currencyCode, maximumFractionDigits: 2 }).format(value);
 }
 
 const SETTLEMENT_WINDOW_DAYS = 3;
-const FEE_TOLERANCE_INR = 25;
-const AMOUNT_TOLERANCE_INR = 1;
+const AMOUNT_TOLERANCE = 0.01;
+const FEE_TOLERANCE = 0.01;
 
-// Documented capture-to-settlement fee policy. The reconciliation rate is
-// configurable (UI → Rules); this is the default when none is supplied.
-const GATEWAY_RATE = 0.02;
+const finite = (value) => typeof value === "number" && Number.isFinite(value);
+const positive = (value) => finite(value) && value > 0;
+const near = (left, right, tolerance = AMOUNT_TOLERANCE) => Math.abs(left - right) <= tolerance;
+const validDate = (value) => value && Number.isFinite(Date.parse(value));
+const uniqueById = (items) => [...new Map(items.filter(Boolean).map((item) => [item.settlementId || item.paymentId || item.bankTxId || item.reference, item])).values()];
 
-function amountTolerance(currency) {
-  return currency === "USD" ? 0.05 : AMOUNT_TOLERANCE_INR;
+function review({ id, currency, title, amount = 0, reason, action, passes, paymentId = null, settlementId = null, bankUtr = null, timeline = [], metricRisk = amount, type = "Reconciliation exception" }) {
+  return { id, orderId: id, currency, status: "Anomaly", type, title, amount: Math.max(0, amount), metricRisk: Math.max(0, metricRisk), reason, action, passes, evidence: 0, paymentId, settlementId, bankUtr, netAmount: null, timeline };
 }
 
-function feeTolerance(currency, expectedFee) {
-  if (currency === "USD") return Math.max(0.5, expectedFee * 0.05);
-  return FEE_TOLERANCE_INR;
+function sourceAvailable(dataset, source) {
+  if (dataset.sourceAvailability) return dataset.sourceAvailability[source] === true;
+  return Array.isArray(dataset[source]);
 }
 
-function buildIndices(data) {
-  const { payments = [], settlements = [], bankCredits = [], refunds = [] } = data;
-  const paymentById = new Map(payments.map((p) => [p.paymentId, p]));
-
+function buildIndexes(dataset) {
   const paymentsByOrder = new Map();
-  for (const p of payments) {
-    if (!paymentsByOrder.has(p.orderId)) paymentsByOrder.set(p.orderId, []);
-    paymentsByOrder.get(p.orderId).push(p);
+  const paymentById = new Map();
+  for (const payment of dataset.payments || []) {
+    if (!payment?.paymentId) continue;
+    paymentById.set(payment.paymentId, payment);
+    const entries = paymentsByOrder.get(payment.orderId) || [];
+    entries.push(payment);
+    paymentsByOrder.set(payment.orderId, entries);
   }
 
-  // settlement → payment linking, two independent routes:
-  //  • gateway_ref (preferred, modern export format)
-  //  • paymentIds (legacy/derived format)
-  const settlementByPayment = new Map();
+  const settlementsByPayment = new Map();
   const settlementsByGateway = new Map();
-  const linkedSettlementIds = new Set();
-  for (const s of settlements) {
-    const ids = Array.isArray(s.paymentIds) ? s.paymentIds.filter(Boolean) : [];
-    for (const pid of ids) {
-      if (!settlementByPayment.has(pid)) settlementByPayment.set(pid, s);
-      if (paymentById.has(pid)) linkedSettlementIds.add(s.settlementId);
-    }
-    if (s.gatewayRef) {
-      if (!settlementsByGateway.has(s.gatewayRef)) settlementsByGateway.set(s.gatewayRef, []);
-      settlementsByGateway.get(s.gatewayRef).push(s);
-      const owner = payments.find((p) => p.gatewayRef === s.gatewayRef);
-      if (owner) linkedSettlementIds.add(s.settlementId);
-    }
-  }
-
-  // Bank credit indexes.
-  const bankByPayout = new Map();
-  const creditByReference = new Map();
   const settlementById = new Map();
-  for (const s of settlements) settlementById.set(s.settlementId, s);
-  for (const c of bankCredits) {
-    if (c.payoutRef) {
-      if (!bankByPayout.has(c.payoutRef)) bankByPayout.set(c.payoutRef, []);
-      bankByPayout.get(c.payoutRef).push(c);
+  const payouts = new Map();
+  for (const settlement of dataset.settlements || []) {
+    if (!settlement?.settlementId) continue;
+    settlementById.set(settlement.settlementId, settlement);
+    for (const paymentId of Array.isArray(settlement.paymentIds) ? settlement.paymentIds.filter(Boolean) : []) {
+      const entries = settlementsByPayment.get(paymentId) || [];
+      entries.push(settlement);
+      settlementsByPayment.set(paymentId, entries);
     }
-    if (c.reference) creditByReference.set(c.reference, c);
+    if (settlement.gatewayRef) {
+      const entries = settlementsByGateway.get(settlement.gatewayRef) || [];
+      entries.push(settlement);
+      settlementsByGateway.set(settlement.gatewayRef, entries);
+    }
+    if (settlement.payoutRef) {
+      const group = payouts.get(settlement.payoutRef) || { settlements: [], credits: [] };
+      group.settlements.push(settlement);
+      payouts.set(settlement.payoutRef, group);
+    }
   }
 
-  // Payout groups: one bank payout aggregates every settlement sharing its
-  // payout_ref (including negative reversal lines).
-  const payoutIndex = new Map();
-  for (const s of settlements) {
-    if (!s.payoutRef) continue;
-    if (!payoutIndex.has(s.payoutRef)) payoutIndex.set(s.payoutRef, { settlements: [], netSum: 0 });
-    const g = payoutIndex.get(s.payoutRef);
-    g.settlements.push(s);
-    g.netSum += s.netAmount || 0;
+  const creditsByReference = new Map();
+  for (const [index, credit] of (dataset.bankCredits || []).entries()) {
+    if (credit?.payoutRef && payouts.has(credit.payoutRef)) payouts.get(credit.payoutRef).credits.push(credit);
+    if (credit?.reference) {
+      const entries = creditsByReference.get(credit.reference) || [];
+      entries.push(credit);
+      creditsByReference.set(credit.reference, entries);
+    }
   }
 
   const refundsByPayment = new Map();
-  for (const r of refunds) {
-    if (!r.paymentId) continue;
-    if (!refundsByPayment.has(r.paymentId)) refundsByPayment.set(r.paymentId, []);
-    refundsByPayment.get(r.paymentId).push(r);
+  for (const refund of dataset.refunds || []) {
+    if (!refund?.paymentId) continue;
+    const entries = refundsByPayment.get(refund.paymentId) || [];
+    entries.push(refund);
+    refundsByPayment.set(refund.paymentId, entries);
   }
-
-  return { paymentById, paymentsByOrder, settlementByPayment, settlementsByGateway, settlementById, linkedSettlementIds, bankByPayout, creditByReference, payoutIndex, refundsByPayment };
+  return { paymentsByOrder, paymentById, settlementsByPayment, settlementsByGateway, settlementById, payouts, creditsByReference, refundsByPayment };
 }
 
-// ─── Reversal consumption (refund lifecycle) ─────────────────────────────────
-// A refund is legitimate only when the money actually flowed back: a negative
-// settlement line backed by a negative bank credit. Such reversals are
-// consumed here so they are never reported as leakage.
-function consumeRefundReversals(refunds, idx) {
-  const consumedSettlements = new Set();
-  const consumedCredits = new Set();
-  if (!refunds.length) return { consumedSettlements, consumedCredits };
-
-  for (const r of refunds) {
-    const amt = r.refundAmount || 0;
-    if (amt <= 0) continue;
-    const currency = r.currency || "USD";
-    const tol = amountTolerance(currency);
-    for (const settlement of Array.from(idx.payoutIndex.values()).flatMap((g) => g.settlements)) {
-      if (consumedSettlements.has(settlement.settlementId)) continue;
-      if (!(settlement.grossAmount < 0)) continue;
-      if (Math.abs(-settlement.grossAmount - amt) > tol) continue;
-      const credits = idx.bankByPayout.get(settlement.payoutRef) || [];
-      const credit = credits.find((c) => c.amount < 0 && Math.abs(c.amount - (settlement.netAmount || 0)) <= tol);
-      if (credit) {
-        consumedSettlements.add(settlement.settlementId);
-        consumedCredits.add(credit.bankTxId || `${settlement.payoutRef}:${credit.amount}`);
-      }
-    }
-  }
-  return { consumedSettlements, consumedCredits };
+function settlementEvidence(settlement, idx, gatewayRate) {
+  const paymentIds = Array.isArray(settlement.paymentIds) ? settlement.paymentIds.filter(Boolean) : [];
+  const payments = paymentIds.map((id) => idx.paymentById.get(id));
+  if (!paymentIds.length || payments.some((payment) => !payment)) return { ok: false, title: "Settlement evidence incomplete", reason: "Settlement does not contain a complete set of known payment identifiers." };
+  if (![settlement.grossAmount, settlement.feeAmount, settlement.taxAmount, settlement.netAmount].every(finite)) return { ok: false, title: "Settlement evidence incomplete", reason: "Settlement requires explicit gross, fee, tax, and net amounts before it can be cleared." };
+  const capturedTotal = payments.reduce((sum, payment) => sum + payment.capturedAmount, 0);
+  if (!near(settlement.grossAmount, capturedTotal)) return { ok: false, title: "Settlement amount mismatch", reason: `Settlement gross ${settlement.grossAmount} does not equal linked captured payments ${capturedTotal}.` };
+  if (!near(settlement.netAmount, settlement.grossAmount - settlement.feeAmount - settlement.taxAmount)) return { ok: false, title: "Settlement arithmetic mismatch", reason: "Settlement net amount does not equal gross minus documented fee and tax." };
+  const expectedFee = settlement.grossAmount * gatewayRate;
+  if (!near(settlement.feeAmount, expectedFee, FEE_TOLERANCE)) return { ok: false, title: "Unexpected fee deduction (fee creep)", reason: `Documented fee ${settlement.feeAmount} differs from policy fee ${expectedFee}.`, risk: Math.max(0, settlement.feeAmount - expectedFee) };
+  if (!validDate(settlement.settlementDate)) return { ok: false, title: "Settlement evidence incomplete", reason: "Settlement date is missing or invalid." };
+  const latestCapture = Math.max(...payments.map((payment) => Date.parse(payment.capturedAt)));
+  const settledAt = Date.parse(settlement.settlementDate);
+  if (!Number.isFinite(latestCapture) || settledAt < latestCapture || settledAt - latestCapture > SETTLEMENT_WINDOW_DAYS * 24 * 60 * 60 * 1000) return { ok: false, title: "Settlement timing unresolved", reason: "Settlement date is outside the documented capture-to-settlement window." };
+  return { ok: true };
 }
 
-function renderException(order, currency, payment, settlement, credit, verdict) {
-  const risk = verdict.risk ?? 0;
-  const tl = verdict.timeline || [];
-  const passes = verdict.passes;
-  let type = "Reconciliation exception";
-  if (verdict.kind === "missing-payment") type = "Payment exception";
-  else if (verdict.kind === "duplicate-payment" || verdict.kind === "over-capture") type = "Payment exception";
-  else if (verdict.kind === "partial-capture") type = "Payment exception";
-  else if (verdict.kind === "fee-creep") type = "Fee exception";
-  else if (verdict.kind === "no-settlement") type = "Settlement exception";
-  else if (verdict.kind === "refund-error") type = "Refund exception";
-  return {
-    status: "Anomaly",
-    exceptionType: verdict.title,
-    type,
-    title: verdict.title,
-    amount: risk,
-    reason: verdict.reason || tl.filter((c) => c.startsWith("❌")).join(" "),
-    action: verdict.action || "Review failed evidence before taking any money action.",
-    passes,
-    evidence: verdict.evidence ?? (passes ? [passes.p1, passes.p2, passes.p3, passes.p4].filter(Boolean).length * 25 : 0),
-    paymentId: payment ? payment.paymentId : null,
-    settlementId: settlement ? settlement.settlementId : null,
-    bankUtr: credit ? (credit.payoutRef || credit.reference || credit.utr || null) : null,
-    netAmount: credit ? credit.amount : null,
-    timeline: tl,
-  };
+function payoutEvidence(group) {
+  if (!group.credits.length) return { ok: false, title: "Bank payout missing for settlement", risk: Math.max(0, group.settlements.reduce((sum, settlement) => sum + (settlement.netAmount || 0), 0)), reason: "No bank credit has the payout reference." };
+  if (!group.credits.every((credit) => positive(credit.amount) || finite(credit.amount))) return { ok: false, title: "Bank payout evidence incomplete", risk: 0, reason: "Bank payout has an invalid amount." };
+  const settlementNet = group.settlements.reduce((sum, settlement) => sum + settlement.netAmount, 0);
+  const creditTotal = group.credits.reduce((sum, credit) => sum + credit.amount, 0);
+  if (!near(settlementNet, creditTotal)) return { ok: false, title: "Bank payout amount mismatch", risk: Math.abs(settlementNet - creditTotal), reason: `Bank payout ${creditTotal} differs from combined settlement net ${settlementNet}.` };
+  const latestSettlement = Math.max(...group.settlements.map((settlement) => Date.parse(settlement.settlementDate)));
+  if (!group.credits.every((credit) => validDate(credit.creditDate) && Date.parse(credit.creditDate) >= latestSettlement)) return { ok: false, title: "Bank payout timing unresolved", risk: 0, reason: "Bank credit date is missing, invalid, or precedes its settlement." };
+  return { ok: true };
 }
 
-function analyzeOrder(order, idx, gatewayRate, modernSchema) {
-  const currency = order.currency || "USD";
-  const amtTol = amountTolerance(currency);
-  const timeline = [];
-
-  const orderPayments = idx.paymentsByOrder.get(order.orderId) || [];
-  const totalCaptured = orderPayments.reduce((sum, p) => sum + (p.capturedAmount || 0), 0);
-  const amountDiff = totalCaptured - order.amount;
-
-  timeline.push(`Order ${order.orderId} found — ${formatCurrency(order.amount, currency)} ${order.currency}`);
-
-  // ── P1: Order ↔ Payment ───────────────────────────────────────────────────
-  if (orderPayments.length === 0) {
-    return renderException(order, currency, null, null, null, {
-      kind: "missing-payment",
-      title: "Missing payment capture",
-      risk: order.amount,
-      reason: `Order ${order.orderId} (${formatCurrency(order.amount, currency)}) has no captured payment.`,
-      action: "Escalate to payments operations. Do not mark the order as paid.",
-      passes: { p1: false, p2: false, p3: false, p4: false },
-      timeline: [...timeline, "❌ No gateway payment found for the order"],
-    });
-  }
-
-  if (orderPayments.length > 1 && Math.abs(amountDiff) > amtTol) {
-    const payLines = orderPayments.map((p) => `${p.paymentId} ${formatCurrency(p.capturedAmount, currency)}`).join(" + ");
-    return renderException(order, currency, orderPayments[0], null, null, {
-      kind: "duplicate-payment",
-      title: "Duplicate payment capture",
-      risk: Math.abs(amountDiff),
-      reason: `${orderPayments.length} full captures for one order: ${payLines} = ${formatCurrency(totalCaptured, currency)} vs order ${formatCurrency(order.amount, currency)}. Excess at risk: ${formatCurrency(Math.abs(amountDiff), currency)}.`,
-      action: "Escalate immediately. Process a refund for the duplicate capture before settlement.",
-      passes: { p1: false, p2: false, p3: false, p4: false },
-      timeline: [...timeline, `❌ ${orderPayments.length} payments captured for a single order (${payLines})`],
-    });
-  }
-
-  const payment = orderPayments[0];
-  const paymentCaptured = String(payment.status || "").toLowerCase() === "captured";
-  const p1ok = Math.abs(amountDiff) <= amtTol && paymentCaptured;
-
-  if (!p1ok) {
-    if (amountDiff < -amtTol) {
-      const shortfall = order.amount - totalCaptured;
-      return renderException(order, currency, payment, null, null, {
-        kind: "partial-capture",
-        title: "Partial capture — payment below order amount",
-        risk: shortfall,
-        reason: `Order ${order.orderId} is worth ${formatCurrency(order.amount, currency)} but only ${formatCurrency(totalCaptured, currency)} was captured (${payment.paymentId}). ${formatCurrency(shortfall, currency)} never captured.`,
-        action: "Verify capture records with the gateway before fulfilling or refunding.",
-        passes: { p1: false, p2: false, p3: false, p4: false },
-        timeline: [...timeline, `Payment ${payment.paymentId} captured ${formatCurrency(payment.capturedAmount, currency)}`, `❌ Captured ${formatCurrency(totalCaptured, currency)} vs order ${formatCurrency(order.amount, currency)} — partial capture (${formatCurrency(shortfall, currency)} short)`],
-      });
-    }
-    return renderException(order, currency, payment, null, null, {
-      kind: "partial-capture",
-      title: "Over capture — payment above order amount",
-      risk: amountDiff,
-      reason: `Captured ${formatCurrency(totalCaptured, currency)} for an order worth ${formatCurrency(order.amount, currency)}. ${formatCurrency(amountDiff, currency)} excess captured.`,
-      action: "Verify capture records; a refund of the excess must be initiated.",
-      passes: { p1: false, p2: false, p3: false, p4: false },
-      timeline: [...timeline, `Payment ${payment.paymentId} captured ${formatCurrency(payment.capturedAmount, currency)}`, `❌ Captured ${formatCurrency(totalCaptured, currency)} exceeds order amount ${formatCurrency(order.amount, currency)}`],
-    });
-  }
-
-  timeline.push(`Payment ${payment.paymentId} captured ${formatCurrency(payment.capturedAmount, currency)} — matches order amount`);
-
-  // ── P2: Settlement + fee ──────────────────────────────────────────────────
-  const settlements = [];
-  if (payment.gatewayRef) settlements.push(...(idx.settlementsByGateway.get(payment.gatewayRef) || []));
-  if (settlements.length === 0 && idx.settlementByPayment.has(payment.paymentId)) settlements.push(idx.settlementByPayment.get(payment.paymentId));
-
-  if (settlements.length === 0) {
-    return renderException(order, currency, payment, null, null, {
-      kind: "no-settlement",
-      title: "Settlement missing for captured payment",
-      risk: payment.capturedAmount,
-      reason: `Payment ${payment.paymentId} captured ${formatCurrency(payment.capturedAmount, currency)} but no settlement credit references gateway ${payment.gatewayRef || payment.paymentId}.`,
-      action: "Escalate to payments operations. Do not mark the funds as received.",
-      passes: { p1: true, p2: false, p3: false, p4: false },
-      timeline: [...timeline, `Expected settlement within T+${SETTLEMENT_WINDOW_DAYS} days`, "❌ No settlement credit found for the captured payment"],
-    });
-  }
-
-  const primarySettlement = settlements[0];
-  timeline.push(`Settlement ${primarySettlement.settlementId} found for gateway ${primarySettlement.gatewayRef || "-"} (net ${formatCurrency(primarySettlement.netAmount || 0, currency)})`);
-
-  let p2ok = true;
-  let feeException = null;
-  for (const s of settlements) {
-    if (s.grossAmount != null && s.feeAmount != null) {
-      const expectedFee = s.grossAmount * gatewayRate;
-      const diff = s.feeAmount - expectedFee;
-      if (Math.abs(diff) > feeTolerance(currency, expectedFee)) {
-        p2ok = false;
-        feeException = {
-          settlement: s,
-          expectedFee,
-          actualFee: s.feeAmount,
-          excess: s.feeAmount - expectedFee,
-          gross: s.grossAmount,
-        };
-        break;
-      }
-    }
-  }
-  if (feeException) {
-    return renderException(order, currency, payment, feeException.settlement, null, {
-      kind: "fee-creep",
-      title: "Unexpected fee deduction (fee creep)",
-      risk: feeException.excess,
-      reason: `Settlement ${feeException.settlement.settlementId}: gross ${formatCurrency(feeException.gross, currency)} was charged gateway fee ${formatCurrency(feeException.actualFee, currency)}. Expected fee at ${(gatewayRate * 100).toFixed(2)}% is ${formatCurrency(feeException.expectedFee, currency)}. Excess at risk: ${formatCurrency(feeException.excess, currency)}.`,
-      action: "Challenge the additional deduction with the gateway before recording the settlement as received.",
-      passes: { p1: true, p2: false, p3: false, p4: false },
-      timeline: [...timeline, `Settlement ${feeException.settlement.settlementId}: gross ${formatCurrency(feeException.gross, currency)}`, `❌ Fee charged ${formatCurrency(feeException.actualFee, currency)} vs expected ${formatCurrency(feeException.expectedFee, currency)} (${formatCurrency(feeException.excess, currency)} excess)`],
-    });
-  }
-  timeline.push("Gateway fee within policy tolerance");
-
-  // ── P3: Bank credit (aggregated by payout reference) ──────────────────────
-  const payoutRefs = new Set(settlements.filter((s) => s.payoutRef).map((s) => s.payoutRef));
-  let bankException = null;
-  let bankCredit = null;
-  if (payoutRefs.size > 0) {
-    for (const ref of payoutRefs) {
-      const group = idx.payoutIndex.get(ref);
-      const credits = idx.bankByPayout.get(ref) || [];
-      const netTotal = group ? group.netSum : 0;
-      if (credits.length === 0) {
-        bankException = { kind: "missing-bank", ref, netTotal };
-        break;
-      }
-      const bankTotal = credits.reduce((sum, c) => sum + (c.amount || 0), 0);
-      if (Math.abs(bankTotal - netTotal) > amountTolerance(currency)) {
-        bankException = { kind: "amount-mismatch", ref, bankTotal, netTotal };
-        break;
-      }
-      bankCredit = credits[0];
-    }
-  } else if (primarySettlement) {
-    // Legacy schema: bank credit references the settlement directly.
-    const credit = idx.creditByReference.get(primarySettlement.settlementId);
-    if (!credit) {
-      bankException = { kind: "missing-bank", ref: primarySettlement.settlementId, netTotal: primarySettlement.netAmount || 0 };
-    } else {
-      bankCredit = credit;
-      const net = primarySettlement.netAmount || 0;
-      if (Math.abs((credit.amount || 0) - net) > amountTolerance(currency)) {
-        bankException = { kind: "amount-mismatch", ref: primarySettlement.settlementId, bankTotal: credit.amount, netTotal: net };
-      }
-    }
-  }
-  if (bankException) {
-    const msg = bankException.kind === "missing-bank"
-      ? `❌ No bank credit found for payout ${bankException.ref} (combined settlement net ${formatCurrency(bankException.netTotal, currency)})`
-      : `❌ Bank payout ${bankException.ref} credit ${formatCurrency(bankException.bankTotal, currency)} ≠ combined settlement net ${formatCurrency(bankException.netTotal, currency)}`;
-    return renderException(order, currency, payment, primarySettlement, bankCredit, {
-      kind: "bank-mismatch",
-      title: bankException.kind === "missing-bank" ? "Bank payout missing for settlement" : "Bank payout amount mismatch",
-      risk: bankException.kind === "missing-bank" ? bankException.netTotal : Math.abs(bankException.bankTotal - bankException.netTotal),
-      reason: bankException.kind === "missing-bank"
-        ? `Settlements for payout ${bankException.ref} total ${formatCurrency(bankException.netTotal, currency)} but no bank credit exists for that payout.`
-        : `Combined settlements for payout ${bankException.ref} net ${formatCurrency(bankException.netTotal, currency)} but bank credited ${formatCurrency(bankException.bankTotal, currency)}.`,
-      action: "Verify with the bank. Do not report cash as received.",
-      passes: { p1: true, p2: true, p3: false, p4: false },
-      timeline: [...timeline, msg],
-    });
-  }
-  if (bankCredit) timeline.push(`Bank payout ${bankCredit.payoutRef || "-"} credit ${formatCurrency(bankCredit.amount || 0, currency)} confirms combined settlement net`);
-
-  // ── P4: Refund validation ─────────────────────────────────────────────────
-  const orderRefunds = idx.refundsByPayment.get(payment.paymentId) || [];
-  let p4ok = true;
-  let refundException = null;
-  if (orderRefunds.length > 1) {
-    p4ok = false;
-    refundException = "duplicate-refund";
-  } else if (orderRefunds.length === 1) {
-    const r = orderRefunds[0];
-    const refundAmt = r.refundAmount || 0;
-    const reversalExists = Array.from(idx.payoutIndex.values())
-      .flatMap((g) => g.settlements)
-      .some((s) => {
-        if (!(s.grossAmount < 0)) return false;
-        if (Math.abs(-s.grossAmount - refundAmt) > amountTolerance(currency)) return false;
-        const credits = idx.bankByPayout.get(s.payoutRef) || [];
-        return credits.some((c) => c.amount < 0 && Math.abs(c.amount - (s.netAmount || 0)) <= amountTolerance(currency));
-      });
-    if (modernSchema && !reversalExists) {
-      p4ok = false;
-      refundException = "refund-without-reversal";
-    } else {
-      p4ok = true;
-      timeline.push(modernSchema
-        ? `Refund ${r.refundId} supported by negative settlement and bank reversal — valid lifecycle`
-        : `Refund ${r.refundId} attached to payment — lifecycle accepted`);
-    }
-  }
-
-  if (refundException) {
-    return renderException(order, currency, payment, primarySettlement, bankCredit, {
-      kind: "refund-error",
-      title: refundException === "duplicate-refund" ? "Possible duplicate refund" : "Refund without bank reversal",
-      risk: refundException === "duplicate-refund" ? orderRefunds[0].refundAmount || 0 : orderRefunds[0].refundAmount || 0,
-      reason: refundException === "duplicate-refund"
-        ? `More than one refund event is linked to payment ${payment.paymentId}.`
-        : `Payment ${payment.paymentId} has a refund but no negative settlement / bank reversal proves the money flowed back.`,
-      action: "Verify refund intent with the customer and bank before processing.",
-      passes: { p1: true, p2: true, p3: true, p4: false },
-      timeline: [...timeline, "❌ Refund lifecycle not confirmed by bank reversal"],
-    });
-  }
-
-  timeline.push(
-    orderRefunds.length === 0
-      ? "No refund attached — full money trail verified"
-      : "Refund lifecycle verified end-to-end"
-  );
-
-  return {
-    orderId: order.orderId,
-    status: "Cleared",
-    exceptionType: null,
-    kind: "matched",
-    title: "Exact settlement match",
-    amount: order.amount,
-    reason: "Order, captured payment, settlement line and aggregated bank payout agree within the approved tolerance.",
-    action: "Auto-matched. No money action required.",
-    passes: { p1: p1ok, p2: p2ok, p3: true, p4: p4ok },
-    evidence: 100,
-    paymentId: payment.paymentId,
-    settlementId: primarySettlement.settlementId,
-    bankUtr: bankCredit ? (bankCredit.payoutRef || bankCredit.reference || bankCredit.utr || null) : null,
-    netAmount: bankCredit ? bankCredit.amount : null,
-    timeline,
-  };
+function refundEvidence(refund, idx) {
+  if (!refund.refundId || !refund.paymentId || !positive(refund.refundAmount)) return { ok: false, reason: "Refund lacks an immutable ID, payment link, or positive amount." };
+  const candidates = (idx.settlementsByPayment.get(refund.paymentId) || []).filter((settlement) => settlement.refundId === refund.refundId && settlement.grossAmount < 0 && near(-settlement.grossAmount, refund.refundAmount));
+  if (candidates.length !== 1) return { ok: false, reason: "No uniquely linked negative settlement proves this refund." };
+  const settlement = candidates[0];
+  if (!settlement.payoutRef || !idx.payouts.has(settlement.payoutRef)) return { ok: false, reason: "Refund settlement lacks a bank payout reference." };
+  const bank = payoutEvidence(idx.payouts.get(settlement.payoutRef));
+  return bank.ok ? { ok: true } : { ok: false, reason: bank.reason };
 }
 
-function orphanSettlementRecord(s, idx, gatewayRate) {
-  const currency = s.currency || "USD";
-  const net = s.netAmount || 0;
-  const credits = idx.bankByPayout.get(s.payoutRef) || [];
-  const bankTotal = credits.reduce((sum, c) => sum + (c.amount || 0), 0);
-  const bankOk = Math.abs(bankTotal - net) <= amountTolerance(currency);
-  return {
-    id: s.settlementId,
-    orderId: null,
-    type: "Settlement exception",
-    title: "Orphan settlement with bank credit",
-    amount: bankOk ? Math.abs(net) : Math.abs(bankTotal - net),
-    currency,
-    status: "Anomaly",
-    reason: `Settlement ${s.settlementId} references gateway ${s.gatewayRef || "-"} which matches no order or payment. Bank payout ${s.payoutRef || "-"} credited ${formatCurrency(bankTotal, currency)} (settlement net ${formatCurrency(net, currency)}).`,
-    action: "Identify the true merchant order or hold the funds in suspense.",
-    passes: { p1: false, p2: false, p3: bankOk, p4: false },
-    evidence: bankOk ? 25 : 0,
-    paymentId: null,
-    settlementId: s.settlementId,
-    bankUtr: s.payoutRef || null,
-    netAmount: bankTotal,
-    timeline: [
-      `Settlement ${s.settlementId} exists (gross ${formatCurrency(s.grossAmount || 0, currency)}, net ${formatCurrency(net, currency)})`,
-      `❌ No order or payment references gateway ${s.gatewayRef || "-"}`,
-      bankOk
-        ? `⚠ Bank payout ${s.payoutRef || "-"} received ${formatCurrency(bankTotal, currency)} — money moved but recipient unknown`
-        : `❌ Bank payout ${s.payoutRef || "-"} credit ${formatCurrency(bankTotal, currency)} does not match net ${formatCurrency(net, currency)}`,
-    ],
-  };
-}
-
-function orphanBankRecord(c, idx) {
-  const currency = c.currency || "USD";
-  return {
-    id: c.bankTxId || `BTX-${Math.abs(c.amount || 0)}`,
-    orderId: null,
-    type: "Bank exception",
-    title: "Orphan bank credit — unexplained credit",
-    amount: Math.abs(c.amount || 0),
-    currency,
-    status: "Anomaly",
-    reason: `Bank credit ${formatCurrency(Math.abs(c.amount || 0), currency)} has no payout reference and matches no settlement/payout. Label: ${c.description || "none"}.`,
-    action: "Contact the bank to identify the source. Never assign to the nearest order.",
-    passes: { p1: false, p2: false, p3: false, p4: false },
-    evidence: 0,
-    paymentId: null,
-    settlementId: null,
-    bankUtr: null,
-    netAmount: Math.abs(c.amount || 0),
-    timeline: [
-      `Bank credit ${formatCurrency(Math.abs(c.amount || 0), currency)} received`,
-      `❌ No payout reference links it to a settlement`,
-      `❌ No settlement references this payout — unexplained credit`,
-    ],
-  };
-}
-
-export async function runReconciliation(dataset, isCustom, options = {}) {
-  const { gatewayRate = GATEWAY_RATE } = options;
-  const currency = dataset.orders[0]?.currency || "USD";
-  const idx = buildIndices(dataset);
-
-  // Modern exports carry settlement fee/payout detail (gross, fee, payout_ref)
-  // which is required to prove refund reversals end-to-end. Legacy exports
-  // without those columns use the lighter refund lifecycle check.
-  const modernSchema = dataset.settlements.some(
-    (s) => s.grossAmount != null || s.feeAmount != null || s.payoutRef
-  );
-
-  const { consumedSettlements, consumedCredits } = consumeRefundReversals(dataset.refunds || [], idx);
-
-  const results = [];
-  for (const o of dataset.orders) {
-    results.push(analyzeOrder(o, idx, gatewayRate, modernSchema));
+function payoutFindings(idx, currency) {
+  const records = [];
+  const state = new Map();
+  for (const [payoutRef, group] of idx.payouts) {
+    const evidence = payoutEvidence(group);
+    state.set(payoutRef, evidence);
+    if (!evidence.ok) records.push(review({
+      id: `PAYOUT:${payoutRef}`, currency, type: "Payout exception", title: evidence.title, amount: evidence.risk, metricRisk: evidence.risk,
+      reason: evidence.reason, action: "Verify the payout with the bank before recording cash as received.", passes: { p1: null, p2: true, p3: false, p4: null }, bankUtr: payoutRef,
+      timeline: [`Payout ${payoutRef} contains ${group.settlements.length} settlement line(s).`, `❌ ${evidence.reason}`],
+    }));
   }
+  return { records, state };
+}
 
-  const records = dataset.orders.map((order, i) => {
-    const r = results[i];
-    return {
-      id: order.orderId,
-      orderId: order.orderId,
-      merchantId: order.merchantId || "MID-UPLOAD",
-      customerId: order.customerId || null,
-      currency: order.currency || currency,
-      status: r.status,
-      type: r.kind === "matched" ? "Order + gateway + settlement" : r.type,
-      title: r.title,
-      amount: r.kind === "matched" ? order.amount : r.amount,
-      reason: r.reason,
-      action: r.action,
-      passes: r.passes,
-      evidence: r.evidence,
-      paymentId: r.paymentId,
-      settlementId: r.settlementId,
-      bankUtr: r.bankUtr,
-      netAmount: r.netAmount,
-      timeline: r.timeline,
-      dates: {
-        order: order.createdAt || null,
-        payment: dataset.payments.find((p) => p.paymentId === r.paymentId)?.capturedAt || null,
-        settlement: dataset.settlements.find((s) => s.settlementId === r.settlementId)?.settlementDate || null,
-        bank: null,
-      },
-      submitted: false,
-      groundTruth: null,
-      productCategory: null,
-      isRefund: (dataset.refunds || []).some((rf) => rf.paymentId === r.paymentId),
-    };
+function analyzeOrder(order, dataset, idx, payoutState, gatewayRate) {
+  const currency = order.currency || "INR";
+  const missingSources = ["payments", "settlements", "bankCredits", "refunds"].filter((source) => !sourceAvailable(dataset, source));
+  if (missingSources.length) return review({
+    id: order.orderId, currency, title: "Evidence source unavailable", amount: order.amount, reason: `Cannot establish a complete money trail because ${missingSources.join(", ")} source data was not supplied.`, action: "Upload the missing source export; do not mark this order as reconciled.", passes: { p1: false, p2: false, p3: false, p4: false }, timeline: [`Order ${order.orderId} loaded.`, `❌ Missing source evidence: ${missingSources.join(", ")}.`],
   });
-
-  // Orphan settlements: settlement lines with no order/payment (excluding
-  // consumed refund reversals). Never hide the money — show it for review.
-  const orphanSettlements = dataset.settlements.filter(
-    (s) => !idx.linkedSettlementIds.has(s.settlementId) && !consumedSettlements.has(s.settlementId)
-  );
-  const orphanSettlementRecords = orphanSettlements.map((s) => orphanSettlementRecord(s, idx, gatewayRate));
-
-  // Orphan bank credits: credits whose payout reference matches no settlement
-  // (or has no payout reference at all). Include negative reversals only if not
-  // consumed.
-  const orphanBankCredits = dataset.bankCredits.filter((c) => {
-    if (consumedCredits.has(c.bankTxId || `${c.payoutRef}:${c.amount}`)) return false;
-    if (c.payoutRef) return !idx.payoutIndex.has(c.payoutRef);
-    if (c.reference && idx.settlementById.has(c.reference)) return false;
-    return true;
+  if (!positive(order.amount) || !validDate(order.createdAt)) return review({
+    id: order.orderId, currency, title: "Order evidence incomplete", amount: 0, reason: "Order requires a positive amount and valid creation date.", action: "Correct the order export before reconciliation.", passes: { p1: false, p2: false, p3: false, p4: false }, timeline: [`❌ Order ${order.orderId} has incomplete financial evidence.`],
   });
-  const orphanBankRecords = orphanBankCredits.map((c) => orphanBankRecord(c, idx));
+  const payments = idx.paymentsByOrder.get(order.orderId) || [];
+  if (!payments.length) return review({ id: order.orderId, currency, title: "Missing payment capture", amount: order.amount, reason: "No gateway payment references this order.", action: "Investigate payment capture; do not mark the order as paid.", passes: { p1: false, p2: false, p3: false, p4: false }, timeline: [`Order ${order.orderId} found.`, "❌ No payment references the order."] });
+  if (payments.length !== 1) return review({ id: order.orderId, currency, title: "Multiple payment captures require allocation", amount: order.amount, reason: "More than one payment references this order and no explicit split-payment allocation model exists.", action: "Review captures and provide an explicit allocation before clearing.", passes: { p1: false, p2: false, p3: false, p4: false }, paymentId: payments[0].paymentId, timeline: [`❌ ${payments.length} payments reference order ${order.orderId}.`] });
+  const payment = payments[0];
+  if (String(payment.status || "").toLowerCase() !== "captured") return review({ id: order.orderId, currency, title: "Payment not captured", amount: 0, reason: `Gateway status is ${payment.status || "unknown"}, not captured.`, action: "Verify the gateway lifecycle before fulfillment.", passes: { p1: false, p2: false, p3: false, p4: false }, paymentId: payment.paymentId, timeline: [`❌ Payment ${payment.paymentId} is not captured.`] });
+  if (!positive(payment.capturedAmount) || !validDate(payment.capturedAt) || !near(payment.capturedAmount, order.amount)) return review({ id: order.orderId, currency, title: "Partial capture — payment differs from order", amount: Math.abs((payment.capturedAmount || 0) - order.amount), reason: "Captured amount does not exactly equal the order amount.", action: "Review capture evidence before fulfillment or refund.", passes: { p1: false, p2: false, p3: false, p4: false }, paymentId: payment.paymentId, timeline: [`❌ Payment ${payment.paymentId} does not prove the order amount.`] });
 
-  const allRecords = [...records, ...orphanSettlementRecords, ...orphanBankRecords];
-  const matched = records.filter((r) => r.status === "Cleared");
-  const review = allRecords.filter((r) => r.status === "Anomaly");
-  const reconciledAmount = matched.reduce((sum, r) => sum + (r.amount || 0), 0);
-  const cashAtRisk = review.reduce((sum, r) => sum + (r.amount || 0), 0);
+  const settlements = uniqueById([...(idx.settlementsByPayment.get(payment.paymentId) || []), ...(payment.gatewayRef ? idx.settlementsByGateway.get(payment.gatewayRef) || [] : [])]);
+  if (!settlements.length) return review({ id: order.orderId, currency, title: "Settlement missing for captured payment", amount: payment.capturedAmount, reason: "No settlement explicitly references the captured payment.", action: "Escalate to the gateway; do not record funds as received.", passes: { p1: true, p2: false, p3: false, p4: false }, paymentId: payment.paymentId, timeline: [`Payment ${payment.paymentId} captured.`, "❌ No settlement link found."] });
+  if (settlements.length !== 1) return review({ id: order.orderId, currency, title: "Multiple settlements require allocation", amount: payment.capturedAmount, reason: "More than one settlement references the payment and no allocation evidence is available.", action: "Review settlement allocations before clearing.", passes: { p1: true, p2: false, p3: false, p4: false }, paymentId: payment.paymentId, timeline: [`❌ ${settlements.length} settlements reference payment ${payment.paymentId}.`] });
+  const settlement = settlements[0];
+  const settlementCheck = settlementEvidence(settlement, idx, gatewayRate);
+  if (!settlementCheck.ok) return review({ id: order.orderId, currency, title: settlementCheck.title, amount: settlementCheck.risk || 0, reason: settlementCheck.reason, action: "Obtain complete settlement evidence before clearing.", passes: { p1: true, p2: false, p3: false, p4: false }, paymentId: payment.paymentId, settlementId: settlement.settlementId, timeline: [`❌ ${settlementCheck.reason}`] });
 
-  const now = new Date();
-  const ts = (delta) => `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes() + delta).padStart(2, "0")}`;
+  if (settlement.payoutRef) {
+    const bankCheck = payoutState.get(settlement.payoutRef);
+    if (!bankCheck?.ok) return review({ id: order.orderId, currency, title: "Bank payout requires review", amount: 0, metricRisk: 0, reason: bankCheck?.reason || "Bank payout evidence is unavailable.", action: "Review the payout-level finding before recording cash.", passes: { p1: true, p2: true, p3: false, p4: false }, paymentId: payment.paymentId, settlementId: settlement.settlementId, bankUtr: settlement.payoutRef, timeline: [`❌ ${bankCheck?.reason || "Bank payout evidence unavailable."}`] });
+  } else {
+    const credits = idx.creditsByReference.get(settlement.settlementId) || [];
+    if (credits.length !== 1 || !finite(credits[0].amount) || !near(credits[0].amount, settlement.netAmount) || !validDate(credits[0].creditDate) || Date.parse(credits[0].creditDate) < Date.parse(settlement.settlementDate)) return review({ id: order.orderId, currency, title: "Bank credit evidence incomplete", amount: settlement.netAmount, reason: "Settlement requires exactly one dated bank credit with the same amount.", action: "Obtain bank evidence before recording cash.", passes: { p1: true, p2: true, p3: false, p4: false }, paymentId: payment.paymentId, settlementId: settlement.settlementId, timeline: ["❌ Bank credit does not prove this settlement."] });
+  }
 
-  const auditTrail = [
-    { timestamp: ts(0), title: `Ingested ${dataset.orders.length} orders across 5 sources`, description: `${dataset.payments.length} payments · ${dataset.refunds.length} refunds · ${dataset.settlements.length} settlements · ${dataset.bankCredits.length} bank credits normalised.` },
-    { timestamp: ts(1), title: `Pass 1–3 completed: Order → Payment → Settlement → Bank`, description: `${matched.length} orders passed all evidence checks. ${review.length} records flagged (${orphanSettlementRecords.length} orphan settlements, ${orphanBankRecords.length} unexplained bank credits).` },
-    { timestamp: ts(2), title: `Pass 4 completed: Refund validation`, description: `${dataset.refunds.length} refund event(s) validated against settlement/bank reversals.` },
-    { timestamp: ts(3), title: `Policy gate: ${matched.length} auto-matched · ${review.length} escalated · 0 forced`, description: `${formatCurrency(cashAtRisk, currency)} protected in review queue.` },
-  ];
+  const refunds = idx.refundsByPayment.get(payment.paymentId) || [];
+  if (refunds.length > 1) return review({ id: order.orderId, currency, title: "Multiple refunds require allocation", amount: refunds.reduce((sum, refund) => sum + (refund.refundAmount || 0), 0), reason: "Multiple refund events require explicit, independently evidenced reversals.", action: "Review refund intent and reversal references.", passes: { p1: true, p2: true, p3: true, p4: false }, paymentId: payment.paymentId, settlementId: settlement.settlementId, timeline: ["❌ Multiple refund events are linked to this payment."] });
+  if (refunds.length === 1) {
+    const refundCheck = refundEvidence(refunds[0], idx);
+    if (!refundCheck.ok) return review({ id: order.orderId, currency, title: "Refund evidence incomplete", amount: refunds[0].refundAmount, reason: refundCheck.reason, action: "Obtain an explicit refund-to-reversal link before treating the refund as complete.", passes: { p1: true, p2: true, p3: true, p4: false }, paymentId: payment.paymentId, settlementId: settlement.settlementId, timeline: [`❌ ${refundCheck.reason}`] });
+  }
+  return { id: order.orderId, orderId: order.orderId, currency, status: "Cleared", type: "Order reconciliation", title: "Evidence-backed settlement match", amount: order.amount, metricRisk: 0, reason: "Order, capture, settlement allocation, bank credit, and refund state are explicitly evidenced.", action: "Auto-matched. No money action required.", passes: { p1: true, p2: true, p3: true, p4: true }, evidence: 4, paymentId: payment.paymentId, settlementId: settlement.settlementId, bankUtr: settlement.payoutRef || (idx.creditsByReference.get(settlement.settlementId) || [])[0]?.reference || null, netAmount: settlement.netAmount, timeline: ["Order confirmed.", "Payment captured at the order amount.", "Settlement arithmetic and policy fee confirmed.", "Bank credit confirmed.", refunds.length ? "Refund reversal explicitly confirmed." : "No refund event supplied."], };
+}
 
-  // Uploaded datasets carry no ground-truth labels, so a legitimate
-  // evidence-precision figure cannot be computed. Return null so the frontend
-  // renders N/A instead of a misleading 0%.
-  const groundTruth = null;
+function orphanFindings(dataset, idx, currency) {
+  const findings = [];
+  const validOrderIds = new Set((dataset.orders || []).map((order) => order.orderId));
+  for (const settlement of dataset.settlements || []) {
+    const ids = Array.isArray(settlement.paymentIds) ? settlement.paymentIds : [];
+    const linked = ids.some((id) => validOrderIds.has(idx.paymentById.get(id)?.orderId));
+    if (!linked) findings.push(review({ id: `SETTLEMENT:${settlement.settlementId}`, currency, type: "Settlement exception", title: "Orphan settlement", amount: Math.max(0, settlement.netAmount || 0), reason: "Settlement has no payment linked to a known order.", action: "Hold in suspense until a source-proven order relationship is supplied.", passes: { p1: false, p2: false, p3: null, p4: null }, settlementId: settlement.settlementId, timeline: [`❌ Settlement ${settlement.settlementId} has no known order trail.`] }));
+  }
+  for (const credit of dataset.bankCredits || []) {
+    const linkedPayout = credit.payoutRef && idx.payouts.has(credit.payoutRef);
+    const linkedSettlement = credit.reference && idx.settlementById.has(credit.reference);
+    if (!linkedPayout && !linkedSettlement) findings.push(review({ id: `BANK:${credit.bankTxId || credit.utr || credit.reference || index}`, currency, type: "Bank exception", title: "Orphan bank credit", amount: Math.max(0, credit.amount || 0), reason: "Bank credit has no source-proven settlement or payout relationship.", action: "Keep funds in suspense and obtain bank reference evidence.", passes: { p1: false, p2: false, p3: false, p4: null }, bankUtr: credit.utr || credit.payoutRef || credit.reference || null, timeline: ["❌ Bank credit cannot be linked to a settlement."] }));
+  }
+  return findings;
+}
 
-  return {
-    records: allRecords,
-    metrics: {
-      totalRecords: dataset.orders.length,
-      autoMatched: matched.length,
-      autoMatchedText: `${matched.length} / ${dataset.orders.length}`,
-      reconciledAmount,
-      reconciledAmountFormatted: formatCurrency(reconciledAmount, currency),
-      exceptionQueueCount: review.length,
-      forcedMatchesCount: 0,
-      cashAtRisk,
-      cashAtRiskFormatted: formatCurrency(cashAtRisk, currency),
-      evidencePrecision: null,
-      currency,
-    },
-    groundTruth,
-    auditTrail,
+export async function runReconciliation(dataset, _isCustom, options = {}) {
+  const gatewayRate = options.gatewayRate ?? 0.02;
+  const normalized = { orders: [], payments: [], refunds: [], settlements: [], bankCredits: [], ...dataset };
+  const currency = normalized.orders[0]?.currency || "INR";
+  const idx = buildIndexes(normalized);
+  const payout = payoutFindings(idx, currency);
+  const orders = normalized.orders.map((order) => analyzeOrder(order, normalized, idx, payout.state, gatewayRate));
+  const orphans = orphanFindings(normalized, idx, currency);
+  const records = [...orders, ...payout.records, ...orphans];
+  const matched = orders.filter((record) => record.status === "Cleared");
+  const review = records.filter((record) => record.status === "Anomaly");
+  const cashAtRisk = review.reduce((sum, record) => sum + (record.metricRisk || 0), 0);
+  const currencySet = new Set(normalized.orders.map((order) => order.currency).filter(Boolean));
+  const metrics = {
+    totalRecords: orders.length,
+    autoMatched: matched.length,
+    autoMatchedText: `${matched.length} / ${orders.length}`,
+    orderReviewCount: orders.length - matched.length,
+    payoutExceptionCount: payout.records.length,
+    orphanExceptionCount: orphans.length,
+    exceptionQueueCount: review.length,
+    cashAtRisk,
+    cashAtRiskFormatted: currencySet.size === 1 ? formatCurrency(cashAtRisk, currency) : null,
+    reconciledAmount: matched.reduce((sum, record) => sum + record.amount, 0),
+    reconciledAmountFormatted: currencySet.size === 1 ? formatCurrency(matched.reduce((sum, record) => sum + record.amount, 0), currency) : null,
+    forcedMatchesCount: 0,
+    evidencePrecision: null,
+    currency: currencySet.size === 1 ? currency : null,
   };
+  const auditTrail = [{ timestamp: new Date().toISOString(), title: "Deterministic reconciliation completed", description: `${matched.length} orders cleared; ${review.length} findings retained for review. No missing source was fabricated.` }];
+  return { records, metrics, groundTruth: null, auditTrail };
 }

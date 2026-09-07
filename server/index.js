@@ -122,6 +122,10 @@ app.get("/api/records", requireSession, (req, res) => {
     count: records.length,
     total,
     filter: status || "all",
+    // Let a returning client restore the last completed audit without having
+    // to run the engine again. This is intentionally summary-only; evidence
+    // records remain subject to the requested pagination above.
+    metrics: req.sessionData.metrics || null,
     records,
   });
 });

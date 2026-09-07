@@ -46,10 +46,10 @@ const COLUMN_ALIASES = {
   captured_amount: "capturedAmount",
   amount_paid: "capturedAmount",
   payment_status: "paymentStatus",
-  gateway_fee: "fee",
-  fee: "fee",
-  tax: "tax",
-  gst: "tax",
+  gateway_fee: "feeAmount",
+  fee: "feeAmount",
+  tax: "taxAmount",
+  gst: "taxAmount",
   captured_at: "capturedAt",
   payment_date: "capturedAt",
   settlement_id: "settlementId",
@@ -185,7 +185,7 @@ function mapRow(raw, sig) {
     const engineField = COLUMN_ALIASES[normCol];
     if (!engineField) continue;
     let value = String(rawVal ?? "").trim();
-    const numericFields = new Set(["amount", "capturedAmount", "netAmount", "grossAmount", "feeAmount", "fee", "tax", "refundAmount", "itemPrice", "freightValue", "score", "installments", "sequence", "bankAmount"]);
+    const numericFields = new Set(["amount", "capturedAmount", "netAmount", "grossAmount", "feeAmount", "taxAmount", "refundAmount", "itemPrice", "freightValue", "score", "installments", "sequence", "bankAmount"]);
     
     if (numericFields.has(engineField)) {
       const normalizedValue = value.replace(/[₹$€,\s]/g, "");
@@ -474,7 +474,7 @@ export function buildDataset(parsed) {
   // columns in every row. Split it back into per-source arrays so real
   // anomalies (missing payment, missing bank credit, duplicates) survive.
   if (parsed.merged?.rows?.length && !parsed.orders?.rows?.length) {
-    return splitMergedDataset(parsed.merged.rows);
+    return { ...splitMergedDataset(parsed.merged.rows), sourceAvailability: { orders: true, payments: true, refunds: false, settlements: true, bankCredits: true } };
   }
 
   const { orders: ordersResult, payments: paymentsResult, orderItems: itemsResult, refunds: refundsResult, settlements: settlementsResult, bankCredits: bankCreditsResult } = parsed;
@@ -522,39 +522,13 @@ export function buildDataset(parsed) {
         installments: p.installments || 1,
         status: p.paymentStatus || p.status || "captured",
         capturedAt: p.capturedAt || new Date().toISOString(),
-        fee: (p.fee !== undefined && p.fee !== null) ? p.fee : fallbackFee,
-        tax: (p.tax !== undefined && p.tax !== null) ? p.tax : fallbackTax,
+        feeAmount: (p.feeAmount !== undefined && p.feeAmount !== null) ? p.feeAmount : fallbackFee,
+        taxAmount: (p.taxAmount !== undefined && p.taxAmount !== null) ? p.taxAmount : fallbackTax,
       };
       if (!paymentByOrder.has(p.orderId)) paymentByOrder.set(p.orderId, entry);
       return entry;
     });
-  } else {
-    // Synthetic mode (Olist-style): create one payment per order from aggregated data.
-    let payIdx = 1;
-    payments = [];
-    for (const order of orders) {
-      const agg = paymentAggMap.get(order.orderId);
-      const amt = agg?.totalAmount || order.amount || 0;
-      const fee = Math.round(amt * GATEWAY_RATE);
-      const tax = Math.round(fee * GST_ON_FEE);
-      const capturedAt = agg?.capturedAt || order.createdAt;
-      const paymentId = agg?.paymentId || `PAY-UP-${String(payIdx).padStart(6, "0")}`;
-      const p = {
-        paymentId,
-        orderId: order.orderId,
-        capturedAmount: amt,
-        method: agg?.method || "credit_card",
-        installments: agg?.installments || 1,
-        status: "captured",
-        capturedAt,
-        fee,
-        tax,
-      };
-      payments.push(p);
-      paymentByOrder.set(order.orderId, p);
-      payIdx++;
-    }
-  }
+  } else payments = [];
 
   const refundRows = refundsResult?.rows ?? [];
   const isDirectRefund = (r) => r.refundId && (r.paymentId || !(r.score !== undefined && r.score !== null));
@@ -601,9 +575,7 @@ export function buildDataset(parsed) {
         paymentIds: explicitPaymentIds.length > 0 ? explicitPaymentIds : gatewayPaymentIds,
       };
     });
-  } else {
-    settlements = deriveSettlements(payments);
-  }
+  } else settlements = [];
 
   const bankCredits = bankCreditsResult?.rows?.length
     ? bankCreditsResult.rows.map((c) => ({
@@ -612,7 +584,20 @@ export function buildDataset(parsed) {
         payoutRef: c.payoutRef || null,
         reference: c.reference || null,
       }))
-    : deriveBankCredits(settlements);
+    : [];
 
-  return { orders, payments, refunds, settlements, bankCredits };
+  return {
+    orders,
+    payments,
+    refunds,
+    settlements,
+    bankCredits,
+    sourceAvailability: {
+      orders: Boolean(ordersResult),
+      payments: Boolean(paymentsResult),
+      refunds: Boolean(refundsResult),
+      settlements: Boolean(settlementsResult),
+      bankCredits: Boolean(bankCreditsResult),
+    },
+  };
 }
